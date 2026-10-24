@@ -119,7 +119,7 @@ final class MascotController {
 
     private func startPositionTimer() {
         guard positionTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             self?.updatePosition()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -214,7 +214,7 @@ final class MascotController {
             }
         }
 
-        walkPhase += 0.1
+        walkPhase += 0.05
         let offset = sin(walkPhase) * amplitude
         if amplitude > 0.5 {
             let velocity = cos(walkPhase) * amplitude
