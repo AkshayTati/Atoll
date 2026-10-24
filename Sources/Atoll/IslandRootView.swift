@@ -124,7 +124,7 @@ private struct ExpandedContent: View {
                 Circle()
                     .fill(media.isPlaying ? Color.green : Color.white.opacity(0.18))
                     .frame(width: 6, height: 6)
-                Text("ISLET")
+                Text("ATOLL")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .tracking(1.8)
                     .foregroundStyle(.white.opacity(0.55))
