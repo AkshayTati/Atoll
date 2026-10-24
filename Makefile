@@ -1,10 +1,13 @@
-.PHONY: build run stop probe signing clean
+.PHONY: build run stop install probe signing clean
 
 build:
 	./scripts/bundle.sh
 
 run:
 	./scripts/run.sh
+
+install:
+	./scripts/install.sh
 
 stop:
 	@pkill -x Islet >/dev/null 2>&1 || true
