@@ -1,19 +1,25 @@
 import AppKit
 import Combine
-import CoreFoundation
 import Foundation
-import MediaRemoteShim
+import os
 
-/// Reads the system "Now Playing" state through the private MediaRemote
-/// framework and exposes it to SwiftUI.
+/// Now-playing integration.
+///
+/// Since macOS 15.4, MediaRemote refuses to talk to normal apps. The
+/// `media-control` CLI routes through `/usr/bin/perl`, which macOS still
+/// trusts, and streams JSON lines we can consume. It also sends transport
+/// commands for us.
 final class MediaService: ObservableObject {
     @Published private(set) var title = ""
     @Published private(set) var artist = ""
     @Published private(set) var album = ""
     @Published private(set) var artwork: NSImage?
+    @Published private(set) var sourceName = ""
+    @Published private(set) var sourceIcon: NSImage?
     @Published private(set) var isPlaying = false
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var elapsed: TimeInterval = 0
+    @Published private(set) var helperMissing = false
 
     var hasTrack: Bool { !title.isEmpty }
 
@@ -22,14 +28,22 @@ final class MediaService: ObservableObject {
         return min(max(elapsed / duration, 0), 1)
     }
 
+    private var cliPath: String?
+    private var streamProcess: Process?
+    private var lineBuffer = Data()
+    private var started = false
+    private var stopping = false
+
+    private var state: [String: Any] = [:]
+    private var lastTitle = ""
+    private var lastArtworkData: Data?
+    private var lastBundleID = ""
+
     private var baseElapsed: TimeInterval = 0
     private var baseDate = Date()
     private var playbackRate: Double = 0
-    private var isRequestInFlight = false
-    private var pollTimer: Timer?
     private var tickTimer: Timer?
-    private var lastArtworkData: Data?
-    private var started = false
+    private var lastPlaying = false
 
     // MARK: - Lifecycle
 
@@ -37,14 +51,27 @@ final class MediaService: ObservableObject {
         guard !started else { return }
         started = true
 
-        installNotificationObservers()
-        refresh()
-
-        let poll = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
-            self?.refresh()
+        cliPath = locateCLI()
+        guard cliPath != nil else {
+            helperMissing = true
+            print("media: media-control not found")
+            return
         }
-        RunLoop.main.add(poll, forMode: .common)
-        pollTimer = poll
+        startStream()
+    }
+
+    func stop() {
+        stopping = true
+        streamProcess?.terminate()
+        streamProcess = nil
+        stopTicking()
+    }
+
+    /// The stream is push-based; this only restarts it if it died.
+    func refresh() {
+        if streamProcess == nil, started, !stopping {
+            startStream()
+        }
     }
 
     // MARK: - Transport
@@ -69,65 +96,158 @@ final class MediaService: ObservableObject {
         send(5)
     }
 
-    private func send(_ command: Int32) {
-        guard islet_mr_available() else { return }
-        islet_mr_send_command(command)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.refresh()
+    private func send(_ command: Int) {
+        runCLI(["send", "\(command)"])
+    }
+
+    // MARK: - media-control child process
+
+    private func locateCLI() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/media-control",
+            "/usr/local/bin/media-control",
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/media-control").path
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private func startStream() {
+        guard let cliPath, streamProcess == nil else { return }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: cliPath)
+        process.arguments = ["stream", "--debounce=100"]
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.consume(data)
+        }
+
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                print("media-control: \(trimmed)")
+            }
+        }
+
+        process.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.streamProcess = nil
+                guard self.started, !self.stopping else { return }
+                print("media: stream exited (\(proc.terminationStatus)); restarting")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    self?.startStream()
+                }
+            }
+        }
+
+        do {
+            try process.run()
+            streamProcess = process
+            print("media: streaming via \(cliPath)")
+        } catch {
+            print("media: failed to start stream: \(error)")
+            helperMissing = true
         }
     }
 
-    // MARK: - Fetching
-
-    func refresh() {
-        guard !isRequestInFlight else { return }
-        isRequestInFlight = true
-
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        islet_mr_request_now_playing({ info, rawContext in
-            guard let rawContext else { return }
-            let service = Unmanaged<MediaService>.fromOpaque(rawContext).takeUnretainedValue()
-            service.receive(info)
-        }, context)
-    }
-
-    private func receive(_ info: CFDictionary?) {
-        let dict = info as? [String: Any]
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isRequestInFlight = false
-            self.apply(dict)
+    private func runCLI(_ arguments: [String]) {
+        guard let cliPath else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: cliPath)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            print("media: command \(arguments) failed: \(error)")
         }
     }
 
-    private func apply(_ dict: [String: Any]?) {
-        guard let dict, !dict.isEmpty else {
+    private func consume(_ data: Data) {
+        lineBuffer.append(data)
+
+        while let newline = lineBuffer.firstIndex(of: 0x0A) {
+            let line = lineBuffer[lineBuffer.startIndex..<newline]
+            lineBuffer.removeSubrange(lineBuffer.startIndex...newline)
+
+            guard !line.isEmpty,
+                  let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  let payload = object["payload"] as? [String: Any] else {
+                continue
+            }
+
+            let diff = object["diff"] as? Bool ?? false
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(payload, diff: diff)
+            }
+        }
+    }
+
+    // MARK: - State
+
+    private func apply(_ payload: [String: Any], diff: Bool) {
+        if diff {
+            for (key, value) in payload {
+                if value is NSNull {
+                    state.removeValue(forKey: key)
+                } else {
+                    state[key] = value
+                }
+            }
+        } else {
+            state = payload
+        }
+
+        applyState()
+    }
+
+    private func applyState() {
+        let newTitle = state["title"] as? String ?? ""
+
+        guard !newTitle.isEmpty else {
             clear()
             return
         }
 
-        title = dict["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
-        artist = dict["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
-        album = dict["kMRMediaRemoteNowPlayingInfoAlbum"] as? String ?? ""
-        duration = dict["kMRMediaRemoteNowPlayingInfoDuration"] as? Double ?? 0
-        let rawElapsed = dict["kMRMediaRemoteNowPlayingInfoElapsedTime"] as? Double ?? 0
-        playbackRate = dict["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double ?? 0
+        title = newTitle
+        artist = state["artist"] as? String ?? ""
+        album = state["album"] as? String ?? ""
+        duration = state["duration"] as? Double ?? 0
+
+        let rawElapsed = state["elapsedTime"] as? Double ?? 0
+        playbackRate = state["playbackRate"] as? Double ?? 0
+        let playing = state["playing"] as? Bool ?? (playbackRate > 0)
 
         baseElapsed = rawElapsed
         baseDate = Date()
         elapsed = rawElapsed
-        isPlaying = playbackRate > 0
-
-        let artworkData = dict["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data
-        if artworkData != lastArtworkData {
-            lastArtworkData = artworkData
-            if let artworkData, let image = NSImage(data: artworkData) {
-                artwork = image
-            } else {
-                artwork = nil
-            }
+        isPlaying = playing
+        if playing != lastPlaying {
+            print("media: playing=\(playing)")
+            Logger.app.info("media: playing=\(playing, privacy: .public)")
+            lastPlaying = playing
         }
+
+        updateArtwork(titleChanged: newTitle != lastTitle)
+        if newTitle != lastTitle {
+            let bundle = state["bundleIdentifier"] as? String ?? ""
+            print("media: \(newTitle) — \(artist) [\(bundle)] artwork=\(artwork != nil)")
+            Logger.app.info("media: \(newTitle, privacy: .public) — \(self.artist, privacy: .public) [\(bundle, privacy: .public)]")
+        }
+        lastTitle = newTitle
+
+        updateSource()
 
         if isPlaying {
             startTicking()
@@ -136,45 +256,59 @@ final class MediaService: ObservableObject {
         }
     }
 
+    private func updateArtwork(titleChanged: Bool) {
+        if let encoded = state["artworkData"] as? String,
+           let data = Data(base64Encoded: encoded) {
+            if data != lastArtworkData {
+                lastArtworkData = data
+                artwork = NSImage(data: data)
+                if artwork != nil {
+                    print("media: artwork \(data.count) bytes")
+                }
+            }
+        } else if titleChanged {
+            // Artwork can briefly disappear while a track is changing. Only
+            // drop it when the track itself changed.
+            artwork = nil
+            lastArtworkData = nil
+        }
+    }
+
+    private func updateSource() {
+        let bundleID = state["bundleIdentifier"] as? String ?? ""
+        guard bundleID != lastBundleID else { return }
+        lastBundleID = bundleID
+
+        guard !bundleID.isEmpty,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            sourceName = ""
+            sourceIcon = nil
+            return
+        }
+
+        sourceName = FileManager.default.displayName(atPath: url.path)
+            .replacingOccurrences(of: ".app", with: "")
+        sourceIcon = NSWorkspace.shared.icon(forFile: url.path)
+    }
+
     private func clear() {
         title = ""
         artist = ""
         album = ""
         artwork = nil
+        sourceName = ""
+        sourceIcon = nil
         isPlaying = false
         duration = 0
         elapsed = 0
         baseElapsed = 0
         playbackRate = 0
+        lastTitle = ""
         lastArtworkData = nil
+        lastBundleID = ""
+        lastPlaying = false
+        state = [:]
         stopTicking()
-    }
-
-    // MARK: - Notifications
-
-    private func installNotificationObservers() {
-        guard islet_mr_register_notifications() else {
-            print("media: notifications unavailable, polling only")
-            return
-        }
-
-        print("media: notifications registered")
-
-        let names = [
-            "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationDidChangeNotification"
-        ]
-
-        for name in names {
-            NotificationCenter.default.addObserver(
-                forName: NSNotification.Name(name),
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.refresh()
-            }
-        }
     }
 
     // MARK: - Elapsed time

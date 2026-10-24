@@ -4,8 +4,17 @@ A dynamic-island-style notch app for macOS, built for one person: me.
 
 ## Status
 
-Phase 0 — spike. The shell (notch panel, hover expand/collapse) plus a
-MediaRemote probe. No real modules yet.
+Phase 1 — notch shell, media controls, sound switching, and calendar.
+Media goes through the `media-control` CLI because macOS 15.4+ blocks direct
+MediaRemote access from third-party apps.
+
+## Dependencies
+
+- macOS 14+
+- Command Line Tools (Swift 5.9+)
+- `media-control` (Homebrew): `brew tap ungive/media-control && brew install media-control`
+- Optional stable signing identity: `make signing` (self-signed, no Apple
+  developer account)
 
 ## Build & run
 
@@ -13,8 +22,9 @@ MediaRemote probe. No real modules yet.
 make run
 ```
 
-This builds `build/Islet.app`, ad-hoc signs it, and launches the binary with
-stdout going to `build/islet.log`.
+This builds `build/Islet.app`, signs it (stable self-signed identity when
+available), and launches it through LaunchServices. Logs are streamed to
+`build/islet.log`.
 
 ```sh
 make stop     # kill it

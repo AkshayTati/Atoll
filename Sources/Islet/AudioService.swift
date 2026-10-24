@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreAudio
+import os
 
 /// Output device discovery and switching via the CoreAudio HAL.
 final class AudioService: ObservableObject {
@@ -46,6 +47,7 @@ final class AudioService: ObservableObject {
         currentOutputName = found.first(where: { $0.id == current })?.name ?? "No output"
         refreshVolume()
         print("audio: \(found.count) outputs [\(found.map(\.name).joined(separator: ", "))] current=\(currentOutputName)")
+        Logger.app.info("audio: \(found.count, privacy: .public) outputs current=\(self.currentOutputName, privacy: .public)")
     }
 
     // MARK: - Switching

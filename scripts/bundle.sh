@@ -6,6 +6,7 @@ cd "$ROOT"
 
 CONFIG="${CONFIG:-debug}"
 APP="$ROOT/build/Islet.app"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Islet Development}"
 
 swift build -c "$CONFIG" --product Islet
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
@@ -15,8 +16,12 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Islet" "$APP/Contents/MacOS/Islet"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
-# Ad-hoc signature for now. Stable identity (self-signed cert) comes in
-# before we add Calendar/TCC in phase 4.
-codesign --force --sign - --timestamp=none "$APP" >/dev/null
+if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_IDENTITY"; then
+  codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$APP" >/dev/null
+  echo "signed with '$SIGN_IDENTITY'"
+else
+  codesign --force --sign - --timestamp=none "$APP" >/dev/null
+  echo "signed ad-hoc (run scripts/setup-signing.sh for a stable identity)"
+fi
 
 echo "built $APP"

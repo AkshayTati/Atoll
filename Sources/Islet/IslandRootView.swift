@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct IslandRootView: View {
     @ObservedObject var state: IslandState
     @ObservedObject var media: MediaService
     @ObservedObject var audio: AudioService
+    @ObservedObject var calendar: CalendarService
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -23,8 +25,14 @@ struct IslandRootView: View {
                 )
 
             if state.expanded {
-                ExpandedContent(notchHeight: state.notchHeight, state: state, media: media, audio: audio)
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                ExpandedContent(
+                    notchHeight: state.notchHeight,
+                    state: state,
+                    media: media,
+                    audio: audio,
+                    calendar: calendar
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -68,6 +76,7 @@ private struct ExpandedContent: View {
     @ObservedObject var state: IslandState
     @ObservedObject var media: MediaService
     @ObservedObject var audio: AudioService
+    @ObservedObject var calendar: CalendarService
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,7 +90,7 @@ private struct ExpandedContent: View {
                 case .sound:
                     SoundModuleView(audio: audio)
                 case .calendar:
-                    CalendarPlaceholderView()
+                    CalendarModuleView(calendar: calendar)
                 }
             }
             .transition(.opacity)
@@ -109,10 +118,18 @@ private struct ExpandedContent: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
             Spacer()
-            Text(state.activeModule.title.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .tracking(1.6)
-                .foregroundStyle(.white.opacity(0.28))
+            HStack(spacing: 5) {
+                if let icon = media.sourceIcon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 12, height: 12)
+                }
+                Text(media.sourceName.isEmpty ? state.activeModule.title.uppercased() : media.sourceName.uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.28))
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -160,7 +177,7 @@ private struct MediaModuleView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                Text(media.hasTrack ? media.artist : "Music, Spotify, or a browser tab")
+                Text(media.hasTrack ? media.artist : "Music, Spotify, Firefox, or a browser tab")
                     .font(.system(size: 11.5, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.45))
                     .lineLimit(1)
@@ -168,16 +185,18 @@ private struct MediaModuleView: View {
 
                 Spacer(minLength: 4)
 
-                progressBar
+                if media.duration > 0 {
+                    progressBar
 
-                HStack {
-                    Text(timeString(media.elapsed))
-                    Spacer()
-                    Text(timeString(media.duration))
+                    HStack {
+                        Text(timeString(media.elapsed))
+                        Spacer()
+                        Text(timeString(media.duration))
+                    }
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .padding(.top, 1)
                 }
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.3))
-                .padding(.top, 1)
 
                 Spacer(minLength: 2)
 
@@ -409,28 +428,186 @@ private struct SoundModuleView: View {
 
 // MARK: - Calendar
 
-private struct CalendarPlaceholderView: View {
+private struct CalendarModuleView: View {
+    @ObservedObject var calendar: CalendarService
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
     var body: some View {
+        Group {
+            switch calendar.status {
+            case .notDetermined:
+                connectCard
+            case .denied, .restricted, .writeOnly:
+                deniedCard
+            case .fullAccess, .authorized:
+                agenda
+            @unknown default:
+                connectCard
+            }
+        }
+    }
+
+    private var connectCard: some View {
         VStack(spacing: 7) {
-            Image(systemName: "calendar")
-                .font(.system(size: 24, weight: .light))
+            Image(systemName: "calendar.badge.plus")
+                .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.white.opacity(0.5))
-            Text("Calendar")
+            Text("Connect your calendar")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.8))
-            Text("EventKit wiring lands next")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(.white.opacity(0.85))
+            Text("Shows the next events from calendars already in Calendar.app.")
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.35))
+                .multilineTextAlignment(.center)
+            Button(action: calendar.requestAccess) {
+                Text(calendar.loading ? "Requesting…" : "Allow access")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.white.opacity(0.9)))
+            }
+            .buttonStyle(.plain)
+            .disabled(calendar.loading)
+            .padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
+        .padding(.vertical, 16)
+        .background(cardBackground)
+    }
+
+    private var deniedCard: some View {
+        VStack(spacing: 7) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(.white.opacity(0.5))
+            Text("Calendar access is off")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+            Text("Allow Islet under Privacy & Security › Calendars.")
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.35))
+            Button(action: openCalendarSettings) {
+                Text("Open Settings")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.white.opacity(0.9)))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(cardBackground)
+    }
+
+    private var agenda: some View {
+        VStack(spacing: 6) {
+            if calendar.events.isEmpty {
+                Text("No upcoming events")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .background(cardBackground)
+            } else {
+                ForEach(calendar.events) { event in
+                    eventRow(event)
+                }
+            }
+        }
+    }
+
+    private func eventRow(_ event: CalendarService.Event) -> some View {
+        HStack(spacing: 9) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color(nsColor: event.color))
+                .frame(width: 3, height: 30)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                Text(subtitle(for: event))
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.38))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 6)
+
+            if let url = event.joinURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Image(systemName: "video.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Join meeting")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.035))
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color.white.opacity(0.04))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.035))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+            )
+    }
+
+    private func subtitle(for event: CalendarService.Event) -> String {
+        let day: String
+        if Calendar.current.isDateInToday(event.start) {
+            day = "Today"
+        } else if Calendar.current.isDateInTomorrow(event.start) {
+            day = "Tomorrow"
+        } else {
+            day = Self.weekdayFormatter.string(from: event.start)
+        }
+
+        let time = event.isAllDay ? "All day" : Self.timeFormatter.string(from: event.start)
+        var parts = [day, time]
+        if !event.calendarTitle.isEmpty {
+            parts.append(event.calendarTitle)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func openCalendarSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 }
