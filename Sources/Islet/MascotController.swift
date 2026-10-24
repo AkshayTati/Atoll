@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import os
 
 final class MascotPanel: NSPanel {
     override var canBecomeKey: Bool { false }
