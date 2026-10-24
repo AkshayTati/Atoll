@@ -395,7 +395,7 @@ private struct MediaModuleView: View {
 
                     singleControls(hasTrack: hasTrack, playing: playing, active: active)
                 }
-                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .frame(height: 148, alignment: .topLeading)
             }
             .padding(16)
         }
