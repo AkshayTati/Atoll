@@ -104,4 +104,15 @@ struct IslandGeometry {
             height: expandedFrame.height + extra
         )
     }
+
+    /// Brief side reveal for a track change. Keeps the notch height.
+    var peekFrame: NSRect {
+        let width = notchWidth + 200
+        return NSRect(
+            x: (collapsedFrame.midX - width / 2).rounded(),
+            y: screen.frame.maxY - notchHeight,
+            width: width.rounded(),
+            height: notchHeight
+        )
+    }
 }

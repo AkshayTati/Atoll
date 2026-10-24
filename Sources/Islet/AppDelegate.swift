@@ -4,9 +4,11 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var island: IslandController?
     private var hud: HUDController?
+    private var mascot: MascotController?
     private var statusItem: NSStatusItem?
     private var launchAtLoginItem: NSMenuItem?
     private var hudItem: NSMenuItem?
+    private var mascotItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.app.info(
@@ -25,6 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hud.start()
         self.hud = hud
         island.onExpand = { [weak hud] in hud?.hide() }
+
+        let mascot = MascotController(island: island)
+        mascot.start()
+        self.mascot = mascot
 
         installStatusItem()
 
@@ -70,6 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         testHUD.target = self
         menu.addItem(testHUD)
 
+        let mascotItem = NSMenuItem(title: "Show Cat", action: #selector(toggleMascot), keyEquivalent: "")
+        mascotItem.target = self
+        mascotItem.state = mascot?.isEnabled == true ? .on : .off
+        menu.addItem(mascotItem)
+        self.mascotItem = mascotItem
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Islet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
@@ -83,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
         hudItem?.state = hud?.isEnabled == true ? .on : .off
+        mascotItem?.state = mascot?.isEnabled == true ? .on : .off
     }
 
     @objc private func toggleIsland() {
@@ -100,5 +113,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func testHUDLine() {
         hud?.showTest()
+    }
+
+    @objc private func toggleMascot() {
+        guard let mascot else { return }
+        mascot.setEnabled(!mascot.isEnabled)
+        mascotItem?.state = mascot.isEnabled ? .on : .off
     }
 }

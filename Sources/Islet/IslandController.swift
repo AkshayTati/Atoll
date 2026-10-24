@@ -24,6 +24,9 @@ final class IslandController {
     private var sourcesTimer: Timer?
     private var isAnimatingPanel = false
     private var animationGeneration = 0
+    private var peekWorkItem: DispatchWorkItem?
+    private var lastPeekTitle = ""
+    private var lastPeekAt = Date.distantPast
     private var started = false
 
     // MARK: - Lifecycle
@@ -68,8 +71,19 @@ final class IslandController {
     }
 
     var audioService: AudioService { audio }
+    var mediaService: MediaService { media }
     var isExpanded: Bool { state.expanded }
+    var isPeeking: Bool { state.peeking }
+    var hasNotchedScreen: Bool { geometry != nil }
+    var currentPanelFrame: NSRect { panel?.frame ?? .zero }
     var onExpand: (() -> Void)?
+
+    var mascotEnabled = true {
+        didSet {
+            guard let geometry, !state.expanded else { return }
+            animatePanel(to: collapsedTarget(for: geometry))
+        }
+    }
 
     func stop() {
         stopSourcesTimer()
@@ -96,6 +110,9 @@ final class IslandController {
         }
 
         guard !state.expanded else { return }
+        peekWorkItem?.cancel()
+        peekWorkItem = nil
+        state.peeking = false
         onExpand?()
         state.expanded = true
         media.refresh()
@@ -113,6 +130,9 @@ final class IslandController {
         collapseWorkItem?.cancel()
         holdUntil = nil
         state.expanded = false
+        peekWorkItem?.cancel()
+        peekWorkItem = nil
+        state.peeking = false
         stopSourcesTimer()
         Haptics.close()
         animatePanel(to: collapsedTarget(for: geometry))
@@ -136,7 +156,10 @@ final class IslandController {
     }
 
     private func collapsedTarget(for geometry: IslandGeometry) -> NSRect {
-        (media.isPlaying || calendar.hasCollapsedEvent)
+        if state.peeking {
+            return geometry.peekFrame
+        }
+        return (media.isPlaying || calendar.hasCollapsedEvent || mascotEnabled)
             ? geometry.activeCollapsedFrame
             : geometry.collapsedFrame
     }
@@ -146,6 +169,20 @@ final class IslandController {
             .combineLatest(media.$isPlaying)
             .sink { [weak self] _, _ in
                 self?.mediaStateChanged()
+            }
+            .store(in: &cancellables)
+
+        media.$title
+            .removeDuplicates()
+            .sink { [weak self] title in
+                guard let self else { return }
+                let changed = !title.isEmpty && title != self.lastPeekTitle
+                self.lastPeekTitle = title
+                guard changed, !self.state.expanded, self.media.isPlaying else { return }
+                let now = Date()
+                guard now.timeIntervalSince(self.lastPeekAt) > 3 else { return }
+                self.lastPeekAt = now
+                self.peek()
             }
             .store(in: &cancellables)
 
@@ -160,6 +197,30 @@ final class IslandController {
                 self?.collapsedContentChanged()
             }
             .store(in: &cancellables)
+    }
+
+    private func peek() {
+        guard let geometry, !state.expanded else { return }
+        peekWorkItem?.cancel()
+        state.peeking = true
+        Haptics.select()
+        animatePanel(to: geometry.peekFrame)
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.endPeek()
+        }
+        peekWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+    }
+
+    private func endPeek() {
+        guard state.peeking else { return }
+        peekWorkItem?.cancel()
+        peekWorkItem = nil
+        state.peeking = false
+        if let geometry, !state.expanded {
+            animatePanel(to: collapsedTarget(for: geometry))
+        }
     }
 
     private func collapsedContentChanged() {

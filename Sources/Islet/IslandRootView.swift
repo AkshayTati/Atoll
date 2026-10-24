@@ -36,8 +36,13 @@ struct IslandRootView: View {
                 )
                 .transition(.identity)
             } else {
-                CollapsedMediaView(media: media, calendar: calendar, notchWidth: state.notchWidth)
-                    .transition(.identity)
+                CollapsedMediaView(
+                    media: media,
+                    calendar: calendar,
+                    notchWidth: state.notchWidth,
+                    isPeeking: state.peeking
+                )
+                .transition(.identity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -186,6 +191,7 @@ private struct CollapsedMediaView: View {
     @ObservedObject var media: MediaService
     @ObservedObject var calendar: CalendarService
     let notchWidth: CGFloat
+    let isPeeking: Bool
 
     private let wingWidth: CGFloat = 28
 
@@ -193,23 +199,65 @@ private struct CollapsedMediaView: View {
     private var showCalendar: Bool {
         !showMedia && calendar.hasCollapsedEvent && calendar.nextEvent != nil
     }
-    private var visible: Bool { showMedia || showCalendar }
+    private var visible: Bool { isPeeking || showMedia || showCalendar }
     private var accent: Color { Color(nsColor: media.accentColor) }
 
     var body: some View {
-        HStack(spacing: 0) {
-            leftWing
-                .frame(width: wingWidth)
+        Group {
+            if isPeeking {
+                peekContent
+            } else {
+                HStack(spacing: 0) {
+                    leftWing
+                        .frame(width: wingWidth)
 
-            Color.clear
-                .frame(width: notchWidth)
+                    Color.clear
+                        .frame(width: notchWidth)
 
-            rightWing
-                .frame(width: wingWidth)
+                    rightWing
+                        .frame(width: wingWidth)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(visible ? 1 : 0)
         .animation(.easeOut(duration: 0.14), value: visible)
+    }
+
+    private var peekContent: some View {
+        HStack(spacing: 0) {
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.3))
+                    .frame(width: 26, height: 26)
+                    .blur(radius: 5)
+
+                if let artwork = media.artwork {
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 22, height: 22)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                } else {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            .frame(width: 100)
+
+            Color.clear
+                .frame(width: notchWidth)
+
+            Text(media.title)
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: 100, alignment: .leading)
+                .padding(.leading, 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder

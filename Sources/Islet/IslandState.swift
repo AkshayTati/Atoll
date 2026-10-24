@@ -22,6 +22,7 @@ enum IslandModule: String, CaseIterable {
 
 final class IslandState: ObservableObject {
     @Published var expanded = false
+    @Published var peeking = false
     @Published var notchHeight: CGFloat = 32
     @Published var notchWidth: CGFloat = 179
     @Published var activeModule: IslandModule = .media
