@@ -8,8 +8,9 @@ typedef void (*GetClientsFn)(dispatch_queue_t, void (^)(NSArray *));
 typedef int32_t (*ClientPIDFn)(id);
 typedef CFStringRef (*ClientStrFn)(id);
 typedef void (*InfoForClientFn)(id, id, int32_t, dispatch_queue_t, void (^)(NSDictionary *));
-typedef bool (*SendToClientFn)(int32_t, CFDictionaryRef, id, id, CFDictionaryRef, dispatch_queue_t, void (^)(id));
+typedef bool (*SendToClientFn)(int32_t, CFDictionaryRef, id, id, int32_t, int32_t, void (^)(unsigned int, CFArrayRef));
 typedef id (*GetLocalOriginFn)(void);
+typedef id (*ClientCreateFn)(id, NSString *);
 
 static GetClientsFn getClients;
 static ClientPIDFn getClientPID;
@@ -17,6 +18,7 @@ static ClientStrFn getClientBundle;
 static InfoForClientFn getInfoForClient;
 static SendToClientFn sendToClient;
 static GetLocalOriginFn getLocalOrigin;
+static ClientCreateFn createClient;
 
 static void *mrSym(CFBundleRef bundle, const char *name) {
     CFStringRef string = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
@@ -39,6 +41,7 @@ static void loadSymbols(void) {
         getInfoForClient = (InfoForClientFn)mrSym(bundle, "MRMediaRemoteGetNowPlayingInfoForClient");
         sendToClient = (SendToClientFn)mrSym(bundle, "MRMediaRemoteSendCommandToClient");
         getLocalOrigin = (GetLocalOriginFn)mrSym(bundle, "MRMediaRemoteGetLocalOrigin");
+        createClient = (ClientCreateFn)mrSym(bundle, "MRNowPlayingClientCreate");
     });
 }
 
@@ -138,30 +141,47 @@ static NSArray *clientPayload(void) {
 
 static bool sendCommand(NSString *bundleID, int32_t command) {
     loadSymbols();
-    if (!sendToClient || !getLocalOrigin) {
+    if (!sendToClient) {
         return false;
     }
 
-    NSArray *clients = fetchClients();
-    id target = nil;
-    for (id client in clients) {
-        if ([clientBundleID(client) isEqualToString:bundleID]) {
-            target = client;
-            break;
-        }
-    }
-    if (!target) {
+    // Build the client from the bundle ID. Passing the raw MRClient from
+    // GetNowPlayingClients is not enough: the command router falls back to the
+    // system's default player unless the player path is created explicitly.
+    id client = createClient ? createClient(nil, bundleID) : nil;
+    if (!client) {
         return false;
     }
 
-    id origin = getLocalOrigin();
+    NSDictionary *options = @{
+        @"kMRMediaRemoteOptionDisableImplicitAppLaunchBehaviors": @NO
+    };
+
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
-    void (^completion)(id) = ^(id result) {
+    void (^completion)(unsigned int, CFArrayRef) = ^(unsigned int a1, CFArrayRef a2) {
         dispatch_semaphore_signal(semaphore);
     };
-    bool sent = sendToClient(command, NULL, origin, target, NULL, NULL, [completion copy]);
 
-    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
+    bool sent = sendToClient(
+        command,
+        (__bridge CFDictionaryRef)options,
+        nil,
+        client,
+        1,
+        0,
+        [completion copy]
+    );
+
+    if (sent) {
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2.0];
+        while (dispatch_semaphore_wait(semaphore, DISPATCH_TIME_NOW) != 0) {
+            if ([deadline timeIntervalSinceNow] <= 0) {
+                break;
+            }
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        }
+    }
     return sent;
 }
 

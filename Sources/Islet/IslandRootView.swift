@@ -492,7 +492,7 @@ private struct MediaModuleView: View {
 
             Spacer(minLength: 4)
 
-            clientControls(source, playing: playing)
+            clientControls(source, playing: playing, active: active)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -505,6 +505,7 @@ private struct MediaModuleView: View {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(Color.white.opacity(active ? 0.13 : 0.05), lineWidth: 1)
         )
+        .help(active ? "" : "macOS only allows transport control for the active player")
     }
 
     private func clientArtwork(_ source: MultiMediaService.Source, active: Bool) -> some View {
@@ -537,10 +538,10 @@ private struct MediaModuleView: View {
         )
     }
 
-    private func clientControls(_ source: MultiMediaService.Source, playing: Bool) -> some View {
+    private func clientControls(_ source: MultiMediaService.Source, playing: Bool, active: Bool) -> some View {
         HStack(spacing: 10) {
             Button {
-                multi.send(5, to: source.client.bundle)
+                if active { media.previous() }
             } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: 10, weight: .semibold))
@@ -549,9 +550,11 @@ private struct MediaModuleView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!active)
+            .opacity(active ? 1 : 0.25)
 
             Button {
-                multi.send(playing ? 1 : 0, to: source.client.bundle)
+                if active { media.togglePlayPause() }
             } label: {
                 ZStack {
                     Circle()
@@ -565,9 +568,11 @@ private struct MediaModuleView: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .disabled(!active)
+            .opacity(active ? 1 : 0.25)
 
             Button {
-                multi.send(4, to: source.client.bundle)
+                if active { media.next() }
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 10, weight: .semibold))
@@ -576,6 +581,8 @@ private struct MediaModuleView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!active)
+            .opacity(active ? 1 : 0.25)
         }
     }
 
