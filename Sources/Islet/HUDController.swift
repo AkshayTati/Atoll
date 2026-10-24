@@ -154,10 +154,11 @@ final class HUDController {
     private func ensurePanel() -> HUDPanel? {
         guard let geometry = IslandGeometry.resolve() else { return nil }
 
-        let size = NSSize(width: 240, height: 24)
+        let size = NSSize(width: 200, height: 20)
+        let notchBottom = geometry.screen.frame.maxY - geometry.notchHeight
         let frame = NSRect(
             x: (geometry.collapsedFrame.midX - size.width / 2).rounded(),
-            y: geometry.screen.frame.maxY - geometry.notchHeight - size.height,
+            y: notchBottom - 11,
             width: size.width,
             height: size.height
         )
