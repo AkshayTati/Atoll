@@ -16,10 +16,12 @@ final class AudioService: ObservableObject {
     @Published private(set) var currentOutputID: AudioDeviceID = 0
     @Published private(set) var currentOutputName = "No output"
     @Published private(set) var volume: Double = 0.5
+    @Published private(set) var isMuted = false
 
     private let system = AudioObjectID(kAudioObjectSystemObject)
     private var started = false
     private var isApplyingVolume = false
+    private var lastVolumeBeforeMute: Double = 0.5
 
     // MARK: - Lifecycle
 
@@ -93,12 +95,59 @@ final class AudioService: ObservableObject {
         isApplyingVolume = false
     }
 
+    func adjustVolume(by delta: Double) -> Double {
+        if isMuted {
+            setMuted(false)
+        }
+        let next = min(max(volume + delta, 0), 1)
+        setVolume(next)
+        return next
+    }
+
+    @discardableResult
+    func toggleMute() -> Bool {
+        setMuted(!isMuted)
+        return isMuted
+    }
+
+    func setMuted(_ muted: Bool) {
+        guard currentOutputID != 0 else { return }
+
+        if muted {
+            lastVolumeBeforeMute = max(volume, 0.1)
+        }
+
+        let value: UInt32 = muted ? 1 : 0
+        let applied = setMuteScalar(currentOutputID, value, element: kAudioObjectPropertyElementMain)
+            || setMuteScalar(currentOutputID, value, element: 1)
+            || setMuteScalar(currentOutputID, value, element: 2)
+
+        if applied {
+            isMuted = muted
+            return
+        }
+
+        // Devices without a mute control: emulate it with volume.
+        if muted {
+            isMuted = true
+            setVolume(0)
+        } else {
+            isMuted = false
+            setVolume(max(lastVolumeBeforeMute, 0.1))
+        }
+    }
+
     private func refreshVolume() {
         guard !isApplyingVolume, currentOutputID != 0 else { return }
         if let scalar = volumeScalar(currentOutputID, element: kAudioObjectPropertyElementMain)
             ?? volumeScalar(currentOutputID, element: 1)
             ?? volumeScalar(currentOutputID, element: 2) {
             volume = Double(scalar)
+        }
+        if let muted = muteScalar(currentOutputID, element: kAudioObjectPropertyElementMain)
+            ?? muteScalar(currentOutputID, element: 1)
+            ?? muteScalar(currentOutputID, element: 2) {
+            isMuted = muted != 0
         }
     }
 
@@ -207,6 +256,39 @@ final class AudioService: ObservableObject {
             0,
             nil,
             UInt32(MemoryLayout<Float32>.size),
+            &scalar
+        ) == noErr
+    }
+
+    private func muteAddress(element: AudioObjectPropertyElement) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: element
+        )
+    }
+
+    private func muteScalar(_ id: AudioObjectID, element: AudioObjectPropertyElement) -> UInt32? {
+        var address = muteAddress(element: element)
+        guard AudioObjectHasProperty(id, &address) else { return nil }
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else {
+            return nil
+        }
+        return value
+    }
+
+    private func setMuteScalar(_ id: AudioObjectID, _ value: UInt32, element: AudioObjectPropertyElement) -> Bool {
+        var address = muteAddress(element: element)
+        guard AudioObjectHasProperty(id, &address) else { return false }
+        var scalar = value
+        return AudioObjectSetPropertyData(
+            id,
+            &address,
+            0,
+            nil,
+            UInt32(MemoryLayout<UInt32>.size),
             &scalar
         ) == noErr
     }

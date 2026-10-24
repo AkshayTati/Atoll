@@ -3,8 +3,10 @@ import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var island: IslandController?
+    private var hud: HUDController?
     private var statusItem: NSStatusItem?
     private var launchAtLoginItem: NSMenuItem?
+    private var hudItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.app.info(
@@ -15,6 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let island = IslandController()
         island.start()
         self.island = island
+
+        let hud = HUDController(
+            audio: island.audioService,
+            isIslandExpanded: { [weak island] in island?.isExpanded ?? false }
+        )
+        hud.start()
+        self.hud = hud
+        island.onExpand = { [weak hud] in hud?.hide() }
 
         installStatusItem()
 
@@ -50,6 +60,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(launch)
         launchAtLoginItem = launch
 
+        let hudItem = NSMenuItem(title: "Enable HUD Control…", action: #selector(enableHUD), keyEquivalent: "")
+        hudItem.target = self
+        hudItem.state = hud?.isEnabled == true ? .on : .off
+        menu.addItem(hudItem)
+        self.hudItem = hudItem
+
+        let testHUD = NSMenuItem(title: "Test HUD Line", action: #selector(testHUDLine), keyEquivalent: "")
+        testHUD.target = self
+        menu.addItem(testHUD)
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Islet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
@@ -62,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
+        hudItem?.state = hud?.isEnabled == true ? .on : .off
     }
 
     @objc private func toggleIsland() {
@@ -71,5 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleLaunchAtLogin() {
         LaunchAtLogin.set(!LaunchAtLogin.isEnabled)
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
+    }
+
+    @objc private func enableHUD() {
+        hud?.requestAccess()
+    }
+
+    @objc private func testHUDLine() {
+        hud?.showTest()
     }
 }

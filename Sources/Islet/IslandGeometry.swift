@@ -76,9 +76,9 @@ struct IslandGeometry {
         hotZone = hotZone.insetBy(dx: -8, dy: 0)
 
         var activeHotZone = activeCollapsedFrame
-        activeHotZone.origin.y -= 18
-        activeHotZone.size.height += 18
-        activeHotZone = activeHotZone.insetBy(dx: -10, dy: 0)
+        activeHotZone.origin.y -= 10
+        activeHotZone.size.height += 10
+        activeHotZone = activeHotZone.insetBy(dx: -8, dy: 0)
 
         return IslandGeometry(
             screen: screen,

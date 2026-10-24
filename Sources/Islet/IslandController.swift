@@ -67,6 +67,10 @@ final class IslandController {
         }
     }
 
+    var audioService: AudioService { audio }
+    var isExpanded: Bool { state.expanded }
+    var onExpand: (() -> Void)?
+
     func stop() {
         stopSourcesTimer()
         media.stop()
@@ -92,6 +96,7 @@ final class IslandController {
         }
 
         guard !state.expanded else { return }
+        onExpand?()
         state.expanded = true
         media.refresh()
         audio.refresh()
