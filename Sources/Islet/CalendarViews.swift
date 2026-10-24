@@ -297,6 +297,8 @@ struct CalendarModuleView: View {
 private struct CalendarDateWheel: View {
     @ObservedObject var calendar: CalendarService
     @State private var scrollID: Int?
+    @State private var programmaticScroll = false
+    @State private var pendingSelection: DispatchWorkItem?
 
     private let past = 7
     private let future = 14
@@ -316,15 +318,43 @@ private struct CalendarDateWheel: View {
         .scrollTargetBehavior(.viewAligned)
         .contentMargins(.horizontal, 210, for: .scrollContent)
         .onAppear {
-            scrollID = offset(for: calendar.selectedDate)
+            scrollToSelectedDate(animated: false)
         }
-        .onChange(of: calendar.selectedDate) { _, newValue in
-            let target = offset(for: newValue)
-            if scrollID != target {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scrollID = target
+        .onChange(of: calendar.selectedDate) { _, _ in
+            scrollToSelectedDate(animated: true)
+        }
+        .onChange(of: scrollID) { _, newValue in
+            guard !programmaticScroll, let newValue else { return }
+            pendingSelection?.cancel()
+
+            let work = DispatchWorkItem {
+                let target = date(for: newValue)
+                if !Calendar.current.isDate(target, inSameDayAs: calendar.selectedDate) {
+                    calendar.select(target)
                 }
             }
+            pendingSelection = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        }
+    }
+
+    private func scrollToSelectedDate(animated: Bool) {
+        let target = offset(for: calendar.selectedDate)
+        guard scrollID != target else { return }
+
+        programmaticScroll = true
+        pendingSelection?.cancel()
+
+        if animated {
+            withAnimation(.easeOut(duration: 0.2)) {
+                scrollID = target
+            }
+        } else {
+            scrollID = target
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            programmaticScroll = false
         }
     }
 
