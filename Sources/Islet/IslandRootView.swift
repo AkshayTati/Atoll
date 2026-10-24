@@ -3,6 +3,7 @@ import SwiftUI
 struct IslandRootView: View {
     @ObservedObject var state: IslandState
     @ObservedObject var media: MediaService
+    @ObservedObject var audio: AudioService
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -22,7 +23,7 @@ struct IslandRootView: View {
                 )
 
             if state.expanded {
-                ExpandedContent(notchHeight: state.notchHeight, media: media)
+                ExpandedContent(notchHeight: state.notchHeight, state: state, media: media, audio: audio)
                     .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             }
         }
@@ -64,14 +65,27 @@ struct IslandShape: Shape, InsettableShape {
 
 private struct ExpandedContent: View {
     let notchHeight: CGFloat
+    @ObservedObject var state: IslandState
     @ObservedObject var media: MediaService
+    @ObservedObject var audio: AudioService
 
     var body: some View {
         VStack(spacing: 0) {
             header
                 .padding(.bottom, 10)
 
-            MediaModuleView(media: media)
+            Group {
+                switch state.activeModule {
+                case .media:
+                    MediaModuleView(media: media)
+                case .sound:
+                    SoundModuleView(audio: audio)
+                case .calendar:
+                    CalendarPlaceholderView()
+                }
+            }
+            .transition(.opacity)
+            .animation(.easeOut(duration: 0.16), value: state.activeModule)
 
             Spacer(minLength: 8)
 
@@ -79,7 +93,7 @@ private struct ExpandedContent: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, notchHeight + 10)
-        .padding(.bottom, 12)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
@@ -95,7 +109,7 @@ private struct ExpandedContent: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
             Spacer()
-            Text("MEDIA")
+            Text(state.activeModule.title.uppercased())
                 .font(.system(size: 9, weight: .bold, design: .rounded))
                 .tracking(1.6)
                 .foregroundStyle(.white.opacity(0.28))
@@ -103,23 +117,34 @@ private struct ExpandedContent: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 18) {
-            footerTab("media", icon: "play.circle.fill", active: true)
-            footerTab("sound", icon: "speaker.wave.2.fill", active: false)
-            footerTab("calendar", icon: "calendar", active: false)
+        HStack(spacing: 4) {
+            ForEach(IslandModule.allCases, id: \.self) { module in
+                Button {
+                    state.activeModule = module
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: module.icon)
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(module.title.lowercased())
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.white.opacity(state.activeModule == module ? 0.8 : 0.22))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(state.activeModule == module ? 0.08 : 0))
+                    )
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
         }
-    }
-
-    private func footerTab(_ title: String, icon: String, active: Bool) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-            Text(title)
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-        }
-        .foregroundStyle(.white.opacity(active ? 0.7 : 0.2))
     }
 }
+
+// MARK: - Media
 
 private struct MediaModuleView: View {
     @ObservedObject var media: MediaService
@@ -254,5 +279,158 @@ private struct MediaModuleView: View {
         guard time.isFinite, time > 0 else { return "0:00" }
         let total = Int(time.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+// MARK: - Sound
+
+private struct SoundModuleView: View {
+    @ObservedObject var audio: AudioService
+
+    private var currentSymbol: String {
+        audio.outputs.first(where: { $0.id == audio.currentOutputID })?.symbol ?? "hifispeaker.fill"
+    }
+
+    var body: some View {
+        VStack(spacing: 9) {
+            currentCard
+            deviceGrid
+        }
+    }
+
+    private var currentCard: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 38, height: 38)
+                Image(systemName: currentSymbol)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(audio.currentOutputName)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                Text("OUTPUT")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+
+            Spacer(minLength: 12)
+
+            HStack(spacing: 7) {
+                Image(systemName: audio.volume <= 0.001 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+                Slider(
+                    value: Binding(
+                        get: { audio.volume },
+                        set: { audio.setVolume($0) }
+                    ),
+                    in: 0...1
+                )
+                .controlSize(.mini)
+                .tint(.white.opacity(0.85))
+                .frame(width: 128)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private var deviceGrid: some View {
+        Group {
+            if audio.outputs.isEmpty {
+                Text("No output devices")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+            } else {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                    spacing: 8
+                ) {
+                    ForEach(Array(audio.outputs.prefix(6))) { device in
+                        deviceButton(device)
+                    }
+                }
+            }
+        }
+    }
+
+    private func deviceButton(_ device: AudioService.Device) -> some View {
+        let active = device.id == audio.currentOutputID
+        return Button {
+            audio.setOutput(device)
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: device.symbol)
+                    .font(.system(size: 11, weight: .medium))
+                Text(device.name)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                if active {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                }
+            }
+            .foregroundStyle(.white.opacity(active ? 0.9 : 0.5))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.white.opacity(active ? 0.1 : 0.035))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.white.opacity(active ? 0.16 : 0.05), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Calendar
+
+private struct CalendarPlaceholderView: View {
+    var body: some View {
+        VStack(spacing: 7) {
+            Image(systemName: "calendar")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(.white.opacity(0.5))
+            Text("Calendar")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
+            Text("EventKit wiring lands next")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.3))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+        )
     }
 }

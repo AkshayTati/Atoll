@@ -6,6 +6,7 @@ import os
 final class IslandController {
     private let state = IslandState()
     private let media = MediaService()
+    private let audio = AudioService()
     private var panel: IslandPanel?
     private var geometry: IslandGeometry?
 
@@ -25,6 +26,7 @@ final class IslandController {
         started = true
 
         media.start()
+        audio.start()
         rebuild()
         installMonitors()
 
@@ -77,6 +79,7 @@ final class IslandController {
         guard !state.expanded else { return }
         state.expanded = true
         media.refresh()
+        audio.refresh()
         animatePanel(to: geometry.expandedFrame)
         print("island expanded")
         Logger.app.info("island expanded")
@@ -151,7 +154,7 @@ final class IslandController {
         panel.acceptsMouseMovedEvents = true
         panel.isReleasedWhenClosed = false
 
-        let host = NSHostingView(rootView: IslandRootView(state: state, media: media))
+        let host = NSHostingView(rootView: IslandRootView(state: state, media: media, audio: audio))
         host.autoresizingMask = [.width, .height]
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
