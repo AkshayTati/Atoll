@@ -6,6 +6,7 @@ struct IslandRootView: View {
     @ObservedObject var media: MediaService
     @ObservedObject var audio: AudioService
     @ObservedObject var calendar: CalendarService
+    @ObservedObject var multiMedia: MultiMediaService
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -30,7 +31,8 @@ struct IslandRootView: View {
                     state: state,
                     media: media,
                     audio: audio,
-                    calendar: calendar
+                    calendar: calendar,
+                    multiMedia: multiMedia
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             } else {
@@ -80,6 +82,7 @@ private struct ExpandedContent: View {
     @ObservedObject var media: MediaService
     @ObservedObject var audio: AudioService
     @ObservedObject var calendar: CalendarService
+    @ObservedObject var multiMedia: MultiMediaService
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,7 +92,7 @@ private struct ExpandedContent: View {
             Group {
                 switch state.activeModule {
                 case .media:
-                    MediaModuleView(media: media, audio: audio)
+                    MediaModuleView(media: media, audio: audio, multi: multiMedia)
                 case .calendar:
                     CalendarModuleView(calendar: calendar)
                 }
@@ -221,12 +224,16 @@ private struct CollapsedMediaView: View {
 private struct MediaModuleView: View {
     @ObservedObject var media: MediaService
     @ObservedObject var audio: AudioService
+    @ObservedObject var multi: MultiMediaService
 
     var body: some View {
         VStack(spacing: 8) {
-            mediaCard
+            if multi.sources.isEmpty {
+                mediaCard
+            } else {
+                clientList
+            }
             outputBar
-            sourcesStrip
         }
     }
 
@@ -419,75 +426,157 @@ private struct MediaModuleView: View {
         .frame(height: 24)
     }
 
-    // MARK: Sources
+    // MARK: Multi-media list
 
-    @ViewBuilder
-    private var sourcesStrip: some View {
-        let items = Array(displaySources.prefix(8))
-        if !items.isEmpty {
-            HStack(spacing: 7) {
-                Text("AUDIO")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .tracking(1.1)
-                    .foregroundStyle(.white.opacity(0.22))
-
-                ForEach(items) { source in
-                    sourceIcon(source)
-                }
-
-                Spacer(minLength: 0)
+    private var clientList: some View {
+        VStack(spacing: 5) {
+            ForEach(multi.sources) { source in
+                clientRow(source)
             }
-            .frame(height: 20)
         }
     }
 
-    private var displaySources: [AudioService.Source] {
-        var list = audio.sources
-        if !media.sourceBundleID.isEmpty,
-           !list.contains(where: { $0.bundleID == media.sourceBundleID }) {
-            list.insert(
-                AudioService.Source(
-                    id: media.sourceBundleID,
-                    pid: 0,
-                    name: media.sourceName.isEmpty ? media.sourceBundleID : media.sourceName,
-                    icon: media.sourceIcon
-                ),
-                at: 0
-            )
-        }
-        return list
-    }
+    private func clientRow(_ source: MultiMediaService.Source) -> some View {
+        let client = source.client
+        let active = client.bundle == media.sourceBundleID
+        let playing = active ? media.isPlaying : client.isPlaying
+        let duration = active ? media.duration : (client.duration ?? 0)
+        let elapsed = active ? media.elapsed : (client.elapsed ?? 0)
+        let progress = duration > 0 ? min(max(elapsed / duration, 0), 1) : 0
+        let title = (client.title?.isEmpty == false ? client.title : nil) ?? source.appName
+        let artist = (client.artist?.isEmpty == false ? client.artist : nil) ?? source.appName
 
-    private func sourceIcon(_ source: AudioService.Source) -> some View {
-        let active = source.bundleID == media.sourceBundleID
-        let producing = audio.sources.contains(where: { $0.bundleID == source.bundleID })
+        return HStack(spacing: 10) {
+            clientArtwork(source, active: active)
 
-        return ZStack(alignment: .bottomTrailing) {
-            Group {
-                if let icon = source.icon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    Image(systemName: "app.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.5))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    if playing {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 4, height: 4)
+                    }
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 4) {
+                    Text(artist)
+                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .lineLimit(1)
+
+                    if duration > 0 {
+                        Text("· \(timeString(elapsed))/\(timeString(duration))")
+                            .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.25))
+                    }
+                }
+
+                if duration > 0 {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.1))
+                            Capsule()
+                                .fill(Color.white.opacity(0.7))
+                                .frame(width: max(2, geo.size.width * progress))
+                        }
+                    }
+                    .frame(height: 2)
+                    .padding(.top, 1)
                 }
             }
-            .frame(width: 16, height: 16)
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color.white.opacity(active ? 0.55 : 0.12), lineWidth: 1)
-            )
 
-            Circle()
-                .fill(producing ? Color.green : Color.white.opacity(0.25))
-                .frame(width: 4, height: 4)
-                .offset(x: 1, y: 1)
+            Spacer(minLength: 4)
+
+            clientControls(source, playing: playing)
         }
-        .frame(width: 20, height: 20)
-        .help(source.name)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .frame(height: 52)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.white.opacity(active ? 0.075 : 0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Color.white.opacity(active ? 0.13 : 0.05), lineWidth: 1)
+        )
+    }
+
+    private func clientArtwork(_ source: MultiMediaService.Source, active: Bool) -> some View {
+        Group {
+            if active, let artwork = media.artwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if let artwork = source.artwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if let icon = source.appIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(3)
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+        .frame(width: 36, height: 36)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func clientControls(_ source: MultiMediaService.Source, playing: Bool) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                multi.send(5, to: source.client.bundle)
+            } label: {
+                Image(systemName: "backward.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 18, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                multi.send(playing ? 1 : 0, to: source.client.bundle)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.9))
+                    Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.black)
+                        .offset(x: playing ? 0 : 0.5)
+                }
+                .frame(width: 24, height: 24)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                multi.send(4, to: source.client.bundle)
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 18, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func timeString(_ time: TimeInterval) -> String {

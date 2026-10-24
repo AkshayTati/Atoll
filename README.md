@@ -4,14 +4,17 @@ A dynamic-island-style notch app for macOS, built for one person: me.
 
 ## Status
 
-Phase 2 — notch shell, media controls, calendar, and audio output control
+Phase 3 — notch shell, multi-media, calendar, and audio output control
 integrated into the media panel.
 
-- Media goes through the `media-control` CLI because macOS 15.4+ blocks
-  direct MediaRemote access from third-party apps.
-- The old Sound tab is gone. Output device + volume live in the media card.
-- The AUDIO strip lists every app currently producing audio (CoreAudio
-  process objects), with the active Now Playing source highlighted.
+- Every Now Playing client (Chrome, Firefox, Music, Spotify, …) gets its own
+  row with artwork/app icon, title, artist, progress, and **per-client**
+  play/pause/next/previous.
+- Multi-client access goes through a small Perl-hosted helper because macOS
+  15.4+ blocks direct MediaRemote access from third-party apps. The helper
+  lives in `Sources/MediaRemoteHelper` and is bundled into the app.
+- The island grows vertically when more than three clients are active.
+- The old Sound tab is gone. Output device + volume live in the media panel.
 - Output switching is **system-wide**, not per-app. macOS has no public
   per-app output API; true routing would require a process-tap mixer or a
   virtual audio driver.
@@ -46,10 +49,13 @@ developer account, no sandbox, no notarization.
 
 ```
 Sources/Islet/            the app (AppKit shell + SwiftUI content)
+Sources/MediaRemoteHelper/ ObjC dylib loaded by Perl for multi-client access
 Sources/mediaspike/       throwaway CLI probe for the private MediaRemote API
 Sources/MediaRemoteShim/  tiny C shim around MediaRemote (dlopen)
 Resources/Info.plist      bundle metadata (LSUIElement, usage strings)
+Resources/mediaremote-helper.pl  Perl loader for the helper dylib
 scripts/bundle.sh         build + .app assembly + codesign
+scripts/build-helper.sh   compile the MediaRemote helper dylib
 ```
 
 ## Notes

@@ -91,4 +91,17 @@ struct IslandGeometry {
             activeHotZone: activeHotZone
         )
     }
+
+    /// Grows the expanded island for every media client beyond the three rows
+    /// the base layout fits.
+    func expandedFrame(forClientCount count: Int) -> NSRect {
+        let extra = CGFloat(max(0, count - 3)) * 57
+        guard extra > 0 else { return expandedFrame }
+        return NSRect(
+            x: expandedFrame.minX,
+            y: expandedFrame.minY - extra,
+            width: expandedFrame.width,
+            height: expandedFrame.height + extra
+        )
+    }
 }

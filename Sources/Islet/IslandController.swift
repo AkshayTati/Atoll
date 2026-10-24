@@ -9,6 +9,7 @@ final class IslandController {
     private let media = MediaService()
     private let audio = AudioService()
     private let calendar = CalendarService()
+    private let multiMedia = MultiMediaService()
     private var panel: IslandPanel?
     private var geometry: IslandGeometry?
 
@@ -32,6 +33,7 @@ final class IslandController {
         media.start()
         audio.start()
         calendar.start()
+        multiMedia.start()
         rebuild()
         installMonitors()
         observeMedia()
@@ -92,8 +94,9 @@ final class IslandController {
         media.refresh()
         audio.refresh()
         calendar.load()
+        multiMedia.refresh()
         startSourcesTimer()
-        animatePanel(to: geometry.expandedFrame)
+        animatePanel(to: expandedTarget(for: geometry))
         print("island expanded")
         Logger.app.info("island expanded")
     }
@@ -112,8 +115,10 @@ final class IslandController {
     private func startSourcesTimer() {
         stopSourcesTimer()
         audio.refreshSources()
+        multiMedia.refresh()
         let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.audio.refreshSources()
+            self?.multiMedia.refresh()
         }
         RunLoop.main.add(timer, forMode: .common)
         sourcesTimer = timer
@@ -135,6 +140,23 @@ final class IslandController {
                 self?.mediaStateChanged()
             }
             .store(in: &cancellables)
+
+        multiMedia.$sources
+            .sink { [weak self] _ in
+                self?.multiSourcesChanged()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func multiSourcesChanged() {
+        guard let geometry, state.expanded, let panel else { return }
+        let target = expandedTarget(for: geometry)
+        guard panel.frame != target else { return }
+        animatePanel(to: target)
+    }
+
+    private func expandedTarget(for geometry: IslandGeometry) -> NSRect {
+        geometry.expandedFrame(forClientCount: multiMedia.sources.count)
     }
 
     private func mediaStateChanged() {
@@ -162,7 +184,7 @@ final class IslandController {
 
         let panel = ensurePanel(with: geometry)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        let target = state.expanded ? geometry.expandedFrame : collapsedTarget(for: geometry)
+        let target = state.expanded ? expandedTarget(for: geometry) : collapsedTarget(for: geometry)
         panel.setFrame(target, display: true)
         panel.orderFrontRegardless()
 
@@ -206,7 +228,13 @@ final class IslandController {
         panel.isReleasedWhenClosed = false
 
         let host = NSHostingView(
-            rootView: IslandRootView(state: state, media: media, audio: audio, calendar: calendar)
+            rootView: IslandRootView(
+                state: state,
+                media: media,
+                audio: audio,
+                calendar: calendar,
+                multiMedia: multiMedia
+            )
         )
         host.autoresizingMask = [.width, .height]
         host.wantsLayer = true
@@ -257,7 +285,7 @@ final class IslandController {
         let point = NSEvent.mouseLocation
 
         if state.expanded {
-            let frame = geometry.expandedFrame.insetBy(dx: -8, dy: -8)
+            let frame = (panel?.frame ?? geometry.expandedFrame).insetBy(dx: -8, dy: -8)
             if !frame.contains(point) {
                 scheduleCollapse()
             }
@@ -273,8 +301,8 @@ final class IslandController {
         collapseWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self, self.state.expanded else { return }
-            if let frame = self.geometry?.expandedFrame.insetBy(dx: -8, dy: -8),
-               frame.contains(NSEvent.mouseLocation) {
+            let frame = (self.panel?.frame ?? self.geometry?.expandedFrame ?? .zero).insetBy(dx: -8, dy: -8)
+            if frame.contains(NSEvent.mouseLocation) {
                 return
             }
             self.collapse()
