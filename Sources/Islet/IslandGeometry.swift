@@ -10,8 +10,10 @@ struct IslandGeometry {
     let notchWidth: CGFloat
     let notchHeight: CGFloat
     let collapsedFrame: NSRect
+    let activeCollapsedFrame: NSRect
     let expandedFrame: NSRect
     let hotZone: NSRect
+    let activeHotZone: NSRect
 
     static func resolve() -> IslandGeometry? {
         guard let screen = NSScreen.screens.first(where: {
@@ -47,6 +49,18 @@ struct IslandGeometry {
             width: collapsedWidth.rounded(),
             height: collapsedHeight
         )
+
+        // When something is playing, the notch grows two little wings for
+        // album art and a playback glyph.
+        let wingWidth: CGFloat = 28
+        let activeWidth = notchWidth + wingWidth * 2
+        let activeCollapsedFrame = NSRect(
+            x: (centerX - activeWidth / 2).rounded(),
+            y: topY - notchHeight,
+            width: activeWidth.rounded(),
+            height: notchHeight
+        )
+
         let expandedFrame = NSRect(
             x: (centerX - expandedWidth / 2).rounded(),
             y: topY - expandedHeight,
@@ -61,13 +75,20 @@ struct IslandGeometry {
         hotZone.size.height += 12
         hotZone = hotZone.insetBy(dx: -8, dy: 0)
 
+        var activeHotZone = activeCollapsedFrame
+        activeHotZone.origin.y -= 12
+        activeHotZone.size.height += 12
+        activeHotZone = activeHotZone.insetBy(dx: -8, dy: 0)
+
         return IslandGeometry(
             screen: screen,
             notchWidth: notchWidth,
             notchHeight: notchHeight,
             collapsedFrame: collapsedFrame,
+            activeCollapsedFrame: activeCollapsedFrame,
             expandedFrame: expandedFrame,
-            hotZone: hotZone
+            hotZone: hotZone,
+            activeHotZone: activeHotZone
         )
     }
 }

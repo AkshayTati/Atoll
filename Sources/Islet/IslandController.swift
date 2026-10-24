@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import QuartzCore
 import SwiftUI
 import os
@@ -18,6 +19,7 @@ final class IslandController {
     private var holdUntil: Date?
     private var screenObserver: Any?
     private var wakeObserver: Any?
+    private var cancellables = Set<AnyCancellable>()
     private var started = false
 
     // MARK: - Lifecycle
@@ -31,6 +33,7 @@ final class IslandController {
         calendar.start()
         rebuild()
         installMonitors()
+        observeMedia()
 
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -97,9 +100,29 @@ final class IslandController {
         collapseWorkItem?.cancel()
         holdUntil = nil
         state.expanded = false
-        animatePanel(to: geometry.collapsedFrame)
+        animatePanel(to: collapsedTarget(for: geometry))
         print("island collapsed")
         Logger.app.info("island collapsed")
+    }
+
+    private func collapsedTarget(for geometry: IslandGeometry) -> NSRect {
+        media.hasTrack ? geometry.activeCollapsedFrame : geometry.collapsedFrame
+    }
+
+    private func observeMedia() {
+        media.$title
+            .combineLatest(media.$isPlaying)
+            .sink { [weak self] _, _ in
+                self?.mediaStateChanged()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func mediaStateChanged() {
+        guard let geometry, !state.expanded, let panel else { return }
+        let target = collapsedTarget(for: geometry)
+        guard panel.frame != target else { return }
+        animatePanel(to: target)
     }
 
     // MARK: - Panel
@@ -115,10 +138,11 @@ final class IslandController {
 
         self.geometry = geometry
         state.notchHeight = geometry.notchHeight
+        state.notchWidth = geometry.notchWidth
 
         let panel = ensurePanel(with: geometry)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        let target = state.expanded ? geometry.expandedFrame : geometry.collapsedFrame
+        let target = state.expanded ? geometry.expandedFrame : collapsedTarget(for: geometry)
         panel.setFrame(target, display: true)
         panel.orderFrontRegardless()
 
@@ -217,7 +241,7 @@ final class IslandController {
             if !frame.contains(point) {
                 scheduleCollapse()
             }
-        } else if geometry.hotZone.contains(point) {
+        } else if geometry.activeHotZone.contains(point) {
             expand()
         }
     }

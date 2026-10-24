@@ -262,8 +262,8 @@ final class MediaService: ObservableObject {
             if data != lastArtworkData {
                 lastArtworkData = data
                 artwork = NSImage(data: data)
-                if artwork != nil {
-                    print("media: artwork \(data.count) bytes")
+                if let artwork {
+                    Logger.app.info("media: artwork \(data.count, privacy: .public) bytes \(artwork.size.width, privacy: .public)x\(artwork.size.height, privacy: .public)")
                 }
             }
         } else if titleChanged {

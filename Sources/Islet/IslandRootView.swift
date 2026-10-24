@@ -9,10 +9,10 @@ struct IslandRootView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            IslandShape(bottomRadius: state.expanded ? 26 : 14)
+            IslandShape(bottomRadius: state.expanded ? 26 : 10)
                 .fill(Color.black)
                 .overlay(
-                    IslandShape(bottomRadius: state.expanded ? 26 : 14)
+                    IslandShape(bottomRadius: state.expanded ? 26 : 10)
                         .stroke(
                             LinearGradient(
                                 colors: [.white.opacity(0.18), .white.opacity(0.02)],
@@ -33,6 +33,9 @@ struct IslandRootView: View {
                     calendar: calendar
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+            } else {
+                CollapsedMediaView(media: media, notchWidth: state.notchWidth)
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -158,6 +161,53 @@ private struct ExpandedContent: View {
             }
             Spacer()
         }
+    }
+}
+
+private struct CollapsedMediaView: View {
+    @ObservedObject var media: MediaService
+    let notchWidth: CGFloat
+
+    private let wingWidth: CGFloat = 28
+
+    var body: some View {
+        HStack(spacing: 0) {
+            leftWing
+                .frame(width: wingWidth)
+
+            Color.clear
+                .frame(width: notchWidth)
+
+            rightWing
+                .frame(width: wingWidth)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(media.hasTrack ? 1 : 0)
+        .animation(.easeOut(duration: 0.18), value: media.hasTrack)
+    }
+
+    private var leftWing: some View {
+        Group {
+            if let artwork = media.artwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 18, height: 18)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var rightWing: some View {
+        Image(systemName: media.isPlaying ? "waveform" : "pause.fill")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.55))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
