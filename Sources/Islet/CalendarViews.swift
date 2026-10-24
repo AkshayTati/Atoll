@@ -30,6 +30,7 @@ struct CalendarModuleView: View {
             header
 
             CalendarDateWheel(calendar: calendar)
+                .frame(maxWidth: .infinity)
                 .frame(height: 40)
 
             if let event = selectedEvent {
@@ -318,13 +319,14 @@ private struct CalendarDateWheel: View {
             .scrollIndicators(.never)
             .scrollPosition(id: $scrollID, anchor: .center)
             .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, 210, for: .scrollContent)
+            .contentMargins(.horizontal, 245, for: .scrollContent)
 
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(Color.white.opacity(0.22), lineWidth: 1)
                 .frame(width: 38, height: 38)
                 .allowsHitTesting(false)
         }
+        .frame(maxWidth: .infinity)
         .onAppear {
             scrollToSelectedDate(animated: false)
         }
