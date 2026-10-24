@@ -318,19 +318,32 @@ private struct CalendarDateWheel: View {
 
     var body: some View {
         ZStack {
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 2) {
-                    ForEach(-past...future, id: \.self) { offset in
-                        dayCell(offset)
-                            .id(offset)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 2) {
+                        ForEach(-past...future, id: \.self) { offset in
+                            dayCell(offset)
+                                .id(offset)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.never)
+                .scrollPosition(id: $scrollID, anchor: .center)
+                .scrollTargetBehavior(.viewAligned)
+                .contentMargins(.horizontal, 245, for: .scrollContent)
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        forceScroll(proxy, animated: false)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        forceScroll(proxy, animated: false)
                     }
                 }
-                .scrollTargetLayout()
+                .onChange(of: calendar.selectedDate) { _, _ in
+                    forceScroll(proxy, animated: true)
+                }
             }
-            .scrollIndicators(.never)
-            .scrollPosition(id: $scrollID, anchor: .center)
-            .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, 245, for: .scrollContent)
 
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(Color.white.opacity(0.22), lineWidth: 1)
@@ -338,20 +351,9 @@ private struct CalendarDateWheel: View {
                 .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity)
-        .onAppear {
-            scrollToSelectedDate(animated: false)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                scrollToSelectedDate(animated: false)
-            }
-        }
-        .onChange(of: calendar.selectedDate) { _, _ in
-            scrollToSelectedDate(animated: true)
-        }
         .onChange(of: scrollID) { _, newValue in
-            guard let newValue else { return }
+            guard let newValue, !programmaticScroll else { return }
             centeredOffset = newValue
-
-            guard !programmaticScroll else { return }
             pendingSelection?.cancel()
 
             let work = DispatchWorkItem {
@@ -365,23 +367,23 @@ private struct CalendarDateWheel: View {
         }
     }
 
-    private func scrollToSelectedDate(animated: Bool) {
+    private func forceScroll(_ proxy: ScrollViewProxy, animated: Bool) {
         let target = offset(for: calendar.selectedDate)
         centeredOffset = target
-        guard scrollID != target else { return }
-
         programmaticScroll = true
         pendingSelection?.cancel()
 
         if animated {
             withAnimation(.easeOut(duration: 0.2)) {
                 scrollID = target
+                proxy.scrollTo(target, anchor: .center)
             }
         } else {
             scrollID = target
+            proxy.scrollTo(target, anchor: .center)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             programmaticScroll = false
         }
     }
