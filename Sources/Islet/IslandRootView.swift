@@ -34,7 +34,7 @@ struct IslandRootView: View {
                     calendar: calendar,
                     multiMedia: multiMedia
                 )
-                .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                .transition(.opacity)
             } else {
                 CollapsedMediaView(media: media, calendar: calendar, notchWidth: state.notchWidth)
                     .transition(.opacity)
@@ -42,7 +42,7 @@ struct IslandRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.clear)
-        .animation(.timingCurve(0.22, 1.0, 0.36, 1.0, duration: 0.32), value: state.expanded)
+        .animation(.timingCurve(0.2, 0.9, 0.25, 1.0, duration: 0.24), value: state.expanded)
     }
 }
 
@@ -83,6 +83,8 @@ private struct ExpandedContent: View {
     @ObservedObject var audio: AudioService
     @ObservedObject var calendar: CalendarService
     @ObservedObject var multiMedia: MultiMediaService
+
+    @State private var hoveredModule: IslandModule?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -147,7 +149,11 @@ private struct ExpandedContent: View {
     private var footer: some View {
         HStack(spacing: 4) {
             ForEach(IslandModule.allCases, id: \.self) { module in
+                let active = state.activeModule == module
+                let hovered = hoveredModule == module
+
                 Button {
+                    Haptics.select()
                     state.activeModule = module
                 } label: {
                     HStack(spacing: 5) {
@@ -156,16 +162,19 @@ private struct ExpandedContent: View {
                         Text(module.title.lowercased())
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
                     }
-                    .foregroundStyle(.white.opacity(state.activeModule == module ? 0.8 : 0.22))
+                    .foregroundStyle(.white.opacity(active ? 0.8 : (hovered ? 0.5 : 0.22)))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(
                         Capsule()
-                            .fill(Color.white.opacity(state.activeModule == module ? 0.08 : 0))
+                            .fill(Color.white.opacity(active ? 0.08 : (hovered ? 0.035 : 0)))
                     )
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .onHover { isHovering in
+                    hoveredModule = isHovering ? module : nil
+                }
             }
             Spacer()
         }
@@ -198,7 +207,7 @@ private struct CollapsedMediaView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(visible ? 1 : 0)
-        .animation(.easeOut(duration: 0.18), value: visible)
+        .animation(.easeOut(duration: 0.14), value: visible)
     }
 
     @ViewBuilder
@@ -255,7 +264,8 @@ private struct CollapsedMediaView: View {
         if hours < 24 {
             return "\(hours)h"
         }
-        return "1d"
+        let days = hours / 24
+        return days < 7 ? "\(days)d" : ""
     }
 }
 

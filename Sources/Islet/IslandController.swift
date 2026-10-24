@@ -22,6 +22,8 @@ final class IslandController {
     private var wakeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var sourcesTimer: Timer?
+    private var isAnimatingPanel = false
+    private var animationGeneration = 0
     private var started = false
 
     // MARK: - Lifecycle
@@ -93,9 +95,9 @@ final class IslandController {
         state.expanded = true
         media.refresh()
         audio.refresh()
-        calendar.refresh()
         multiMedia.refresh()
         startSourcesTimer()
+        Haptics.open()
         animatePanel(to: expandedTarget(for: geometry))
         print("island expanded")
         Logger.app.info("island expanded")
@@ -107,6 +109,7 @@ final class IslandController {
         holdUntil = nil
         state.expanded = false
         stopSourcesTimer()
+        Haptics.close()
         animatePanel(to: collapsedTarget(for: geometry))
         print("island collapsed")
         Logger.app.info("island collapsed")
@@ -114,10 +117,8 @@ final class IslandController {
 
     private func startSourcesTimer() {
         stopSourcesTimer()
-        audio.refreshSources()
         multiMedia.refresh()
         let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.audio.refreshSources()
             self?.multiMedia.refresh()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -157,14 +158,20 @@ final class IslandController {
     }
 
     private func collapsedContentChanged() {
-        guard let geometry, !state.expanded, let panel else { return }
+        guard !isAnimatingPanel,
+              let geometry,
+              !state.expanded,
+              let panel else { return }
         let target = collapsedTarget(for: geometry)
         guard panel.frame != target else { return }
         animatePanel(to: target)
     }
 
     private func multiSourcesChanged() {
-        guard let geometry, state.expanded, let panel else { return }
+        guard !isAnimatingPanel,
+              let geometry,
+              state.expanded,
+              let panel else { return }
         let target = expandedTarget(for: geometry)
         guard panel.frame != target else { return }
         animatePanel(to: target)
@@ -196,6 +203,8 @@ final class IslandController {
 
         let panel = ensurePanel(with: geometry)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        animationGeneration += 1
+        isAnimatingPanel = false
         let target = state.expanded ? expandedTarget(for: geometry) : collapsedTarget(for: geometry)
         panel.setFrame(target, display: true)
         panel.orderFrontRegardless()
@@ -259,12 +268,28 @@ final class IslandController {
 
     private func animatePanel(to frame: NSRect) {
         guard let panel else { return }
+        animationGeneration += 1
+        let generation = animationGeneration
+        isAnimatingPanel = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.32
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
+            context.duration = 0.24
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1.0)
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(frame, display: true)
+        } completionHandler: { [weak self] in
+            guard let self, self.animationGeneration == generation else { return }
+            self.isAnimatingPanel = false
+            self.settlePanelSize()
         }
+    }
+
+    private func settlePanelSize() {
+        guard !isAnimatingPanel, let geometry, let panel else { return }
+        let target = state.expanded
+            ? expandedTarget(for: geometry)
+            : collapsedTarget(for: geometry)
+        guard panel.frame != target else { return }
+        animatePanel(to: target)
     }
 
     // MARK: - Hover / clicks
@@ -320,6 +345,6 @@ final class IslandController {
             self.collapse()
         }
         collapseWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
     }
 }

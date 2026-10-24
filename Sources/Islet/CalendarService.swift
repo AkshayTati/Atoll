@@ -70,7 +70,7 @@ final class CalendarService: ObservableObject {
 
     var hasCollapsedEvent: Bool {
         guard let nextEvent else { return false }
-        return nextEvent.start < Date().addingTimeInterval(24 * 3600)
+        return nextEvent.start < Date().addingTimeInterval(7 * 24 * 3600)
     }
 
     var canMoveBack: Bool {

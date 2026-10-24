@@ -8,6 +8,8 @@
 	<string>Islet</string>
 	<key>CFBundleExecutable</key>
 	<string>Islet</string>
+	<key>CFBundleIconFile</key>
+	<string>Islet</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.akshay.islet</string>
 	<key>CFBundleInfoDictionaryVersion</key>

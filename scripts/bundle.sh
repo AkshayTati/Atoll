@@ -15,6 +15,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Islet" "$APP/Contents/MacOS/Islet"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+if [ -f "$ROOT/Resources/Islet.icns" ]; then
+  cp "$ROOT/Resources/Islet.icns" "$APP/Contents/Resources/Islet.icns"
+fi
 
 "$ROOT/scripts/build-helper.sh"
 cp "$ROOT/build/libIsletMediaRemote.dylib" "$APP/Contents/Resources/libIsletMediaRemote.dylib"

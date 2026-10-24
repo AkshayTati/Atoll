@@ -4,6 +4,7 @@ import SwiftUI
 struct CalendarModuleView: View {
     @ObservedObject var calendar: CalendarService
     @State private var selectedEvent: CalendarService.Event?
+    @State private var hoveredEventID: String?
 
     var body: some View {
         Group {
@@ -14,6 +15,7 @@ struct CalendarModuleView: View {
                 deniedCard
             case .fullAccess, .authorized:
                 calendarContent
+                    .onAppear { calendar.refresh() }
             @unknown default:
                 connectCard
             }
@@ -148,7 +150,10 @@ struct CalendarModuleView: View {
     }
 
     private func eventRow(_ event: CalendarService.Event) -> some View {
-        Button {
+        let hovered = hoveredEventID == event.id
+
+        return Button {
+            Haptics.select()
             selectedEvent = event
         } label: {
             HStack(alignment: .top, spacing: 8) {
@@ -196,16 +201,19 @@ struct CalendarModuleView: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.white.opacity(0.035))
+                    .fill(Color.white.opacity(hovered ? 0.06 : 0.035))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(Color.white.opacity(0.04), lineWidth: 1)
+                    .stroke(Color.white.opacity(hovered ? 0.07 : 0.04), lineWidth: 1)
             )
             .opacity(event.isEnded ? 0.55 : 1)
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering in
+            hoveredEventID = isHovering ? event.id : nil
+        }
     }
 
     private func subtitle(for event: CalendarService.Event) -> String {
@@ -379,6 +387,7 @@ private struct CalendarDateWheel: View {
         let isToday = Calendar.current.isDateInToday(date)
 
         return Button {
+            Haptics.select()
             calendar.select(date)
         } label: {
             VStack(spacing: 2) {
@@ -539,7 +548,10 @@ private struct EventDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Button(action: onBack) {
+                Button {
+                    Haptics.select()
+                    onBack()
+                } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.white.opacity(0.55))
