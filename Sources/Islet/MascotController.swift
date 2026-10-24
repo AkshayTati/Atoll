@@ -107,6 +107,7 @@ final class MascotController {
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = host
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)
 
         self.panel = panel
         updatePosition()
