@@ -1,7 +1,7 @@
 # Cat sprites
 
 The cat is the orange `catset` character, cropped and re-aligned to 48×48 frames
-for Islet.
+for Atoll.
 
 - Original sprite collection: **catset** by **seethingswarm** (CC0)
 - Frames sourced from the orange cat directory in

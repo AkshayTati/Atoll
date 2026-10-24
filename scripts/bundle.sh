@@ -5,18 +5,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 CONFIG="${CONFIG:-debug}"
-APP="$ROOT/build/Islet.app"
+APP="$ROOT/build/Atoll.app"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Islet Development}"
 
-swift build -c "$CONFIG" --product Islet
+swift build -c "$CONFIG" --product Atoll
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN_DIR/Islet" "$APP/Contents/MacOS/Islet"
+cp "$BIN_DIR/Atoll" "$APP/Contents/MacOS/Atoll"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
-if [ -f "$ROOT/Resources/Islet.icns" ]; then
-  cp "$ROOT/Resources/Islet.icns" "$APP/Contents/Resources/Islet.icns"
+if [ -f "$ROOT/Resources/Atoll.icns" ]; then
+  cp "$ROOT/Resources/Atoll.icns" "$APP/Contents/Resources/Atoll.icns"
 fi
 if [ -d "$ROOT/Resources/CatSprites" ]; then
   cp -R "$ROOT/Resources/CatSprites" "$APP/Contents/Resources/CatSprites"

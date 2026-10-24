@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$ROOT/Resources/icon-1024.png"
-ICONSET="$ROOT/Resources/Islet.iconset"
+ICONSET="$ROOT/Resources/Atoll.iconset"
 
 swift "$ROOT/scripts/make-icon.swift" "$SOURCE"
 
@@ -16,7 +16,7 @@ for size in 16 32 128 256 512; do
 done
 
 cp "$SOURCE" "$ICONSET/icon_512x512@2x.png"
-iconutil -c icns "$ICONSET" -o "$ROOT/Resources/Islet.icns"
+iconutil -c icns "$ICONSET" -o "$ROOT/Resources/Atoll.icns"
 rm -rf "$ICONSET" "$SOURCE"
 
-echo "built $ROOT/Resources/Islet.icns"
+echo "built $ROOT/Resources/Atoll.icns"

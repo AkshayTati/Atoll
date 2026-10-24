@@ -10,6 +10,7 @@ install:
 	./scripts/install.sh
 
 stop:
+	@pkill -x Atoll >/dev/null 2>&1 || true
 	@pkill -x Islet >/dev/null 2>&1 || true
 	@if [ -f build/log.pid ]; then kill "$$(cat build/log.pid)" >/dev/null 2>&1 || true; fi
 	@echo "stopped"

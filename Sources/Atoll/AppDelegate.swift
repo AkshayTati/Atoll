@@ -12,9 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.app.info(
-            "Islet launching from \(Bundle.main.bundlePath, privacy: .public) login=\(LaunchAtLogin.isEnabled, privacy: .public)"
+            "Atoll launching from \(Bundle.main.bundlePath, privacy: .public) login=\(LaunchAtLogin.isEnabled, privacy: .public)"
         )
-        print("Islet launching from \(Bundle.main.bundlePath)")
+        print("Atoll launching from \(Bundle.main.bundlePath)")
 
         let island = IslandController()
         island.start()
@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "capsule.fill", accessibilityDescription: "Islet")
+            button.image = NSImage(systemSymbolName: "capsule.fill", accessibilityDescription: "Atoll")
             button.image?.isTemplate = true
         }
 
@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(peekItem)
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit Islet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Atoll", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
 

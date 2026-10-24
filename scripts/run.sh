@@ -6,6 +6,7 @@ cd "$ROOT"
 
 ./scripts/bundle.sh
 
+pkill -x Atoll >/dev/null 2>&1 || true
 pkill -x Islet >/dev/null 2>&1 || true
 if [[ -f "$ROOT/build/log.pid" ]]; then
   kill "$(cat "$ROOT/build/log.pid")" >/dev/null 2>&1 || true
@@ -13,14 +14,14 @@ fi
 sleep 0.2
 
 mkdir -p "$ROOT/build"
-: >"$ROOT/build/islet.log"
-/usr/bin/log stream --predicate 'process == "Islet"' --level info --style compact \
-  >"$ROOT/build/islet.log" 2>&1 &
+: >"$ROOT/build/atoll.log"
+/usr/bin/log stream --predicate 'process == "Atoll"' --level info --style compact \
+  >"$ROOT/build/atoll.log" 2>&1 &
 echo $! >"$ROOT/build/log.pid"
 
-# Launch through LaunchServices so TCC attributes Calendar access to Islet
+# Launch through LaunchServices so TCC attributes Calendar access to Atoll
 # rather than to the terminal.
-open -n "$ROOT/build/Islet.app"
+open -n "$ROOT/build/Atoll.app"
 
-echo "Islet launched"
-echo "log: $ROOT/build/islet.log"
+echo "Atoll launched"
+echo "log: $ROOT/build/atoll.log"

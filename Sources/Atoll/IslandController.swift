@@ -298,7 +298,7 @@ final class IslandController {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Islet"
+        panel.title = "Atoll"
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false

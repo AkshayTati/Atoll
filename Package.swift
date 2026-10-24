@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "Islet",
+    name: "Atoll",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "Islet", targets: ["Islet"]),
+        .executable(name: "Atoll", targets: ["Atoll"]),
         .executable(name: "mediaspike", targets: ["mediaspike"])
     ],
     targets: [
         .executableTarget(
-            name: "Islet",
-            path: "Sources/Islet"
+            name: "Atoll",
+            path: "Sources/Atoll"
         ),
         .target(
             name: "MediaRemoteShim",

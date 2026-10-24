@@ -6,3 +6,8 @@ build/
 *.cer
 certs/
 .swiftpm/
+DerivedData/
+*.xcuserstate
+*.log
+.vscode/
+.idea/

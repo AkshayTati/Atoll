@@ -268,7 +268,7 @@ struct CalendarModuleView: View {
             Text("Calendar access is off")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.85))
-            Text("Allow Islet under Privacy & Security › Calendars.")
+            Text("Allow Atoll under Privacy & Security › Calendars.")
                 .font(.system(size: 9.5, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.35))
                 .multilineTextAlignment(.center)
