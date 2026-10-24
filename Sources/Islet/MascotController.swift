@@ -29,11 +29,14 @@ final class MascotController {
     private var cancellables = Set<AnyCancellable>()
 
     private var enabled: Bool
+    private var currentAction: MascotAction = .sit
     private var walkPhase: CGFloat = 0
     private var expandedPerch: ExpandedPerch = .header
     private var lastFrame = NSRect.zero
     private var sleeping = false
     private var idleSince: Date?
+    private var peekEndWork: DispatchWorkItem?
+    private var sitWork: DispatchWorkItem?
 
     private enum ExpandedPerch {
         case header
@@ -76,6 +79,8 @@ final class MascotController {
             behaviorTimer = nil
             blinkTimer?.invalidate()
             blinkTimer = nil
+            peekEndWork?.cancel()
+            sitWork?.cancel()
         }
     }
 
@@ -93,7 +98,6 @@ final class MascotController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.ignoresMouseEvents = false
         panel.hidesOnDeactivate = false
@@ -124,7 +128,7 @@ final class MascotController {
 
     private func updatePosition() {
         guard enabled, island.hasNotchedScreen, let panel else {
-            panel?.orderOut(nil)
+            self.panel?.orderOut(nil)
             return
         }
 
@@ -136,11 +140,13 @@ final class MascotController {
 
         let expanded = island.isExpanded
         let playing = island.mediaService.isPlaying
-        let peeking = island.isPeeking
 
         if expanded || playing {
             idleSince = nil
             sleeping = false
+            if currentAction == .peek {
+                cancelPeek()
+            }
         } else if idleSince == nil {
             idleSince = Date()
         } else if Date().timeIntervalSince(idleSince!) > 45 {
@@ -161,33 +167,62 @@ final class MascotController {
             model.mood = mood
         }
 
+        if sleeping && currentAction != .peek {
+            currentAction = .sleep
+        }
+        if model.action != currentAction {
+            model.action = currentAction
+        }
+
         let size: CGFloat = 34
         let half = size / 2
         var center: CGPoint
         var amplitude: CGFloat
 
-        if expanded {
-            switch expandedPerch {
-            case .header:
-                center = CGPoint(x: frame.minX + 92, y: frame.maxY - 17)
-                amplitude = 18
-            case .bottom:
-                center = CGPoint(x: frame.maxX - 70, y: frame.minY)
-                amplitude = 26
+        switch currentAction {
+        case .peek:
+            center = CGPoint(x: frame.midX, y: frame.minY - 2)
+            amplitude = 0
+
+        case .walk:
+            if expanded {
+                switch expandedPerch {
+                case .header:
+                    center = CGPoint(x: frame.minX + 92, y: frame.maxY - 17)
+                    amplitude = 18
+                case .bottom:
+                    center = CGPoint(x: frame.maxX - 70, y: frame.minY)
+                    amplitude = 26
+                }
+            } else {
+                center = CGPoint(x: frame.maxX - 20, y: frame.minY)
+                amplitude = 12
             }
-        } else if peeking {
-            center = CGPoint(x: frame.minX + 18, y: frame.minY)
-            amplitude = 4
-        } else if playing {
-            center = CGPoint(x: frame.maxX - 20, y: frame.minY)
-            amplitude = 12
-        } else {
-            center = CGPoint(x: frame.maxX - 14, y: frame.minY + frame.height / 2)
-            amplitude = 2
+
+        case .sit, .groom, .sleep:
+            if expanded {
+                switch expandedPerch {
+                case .header:
+                    center = CGPoint(x: frame.minX + 92, y: frame.maxY - 17)
+                case .bottom:
+                    center = CGPoint(x: frame.maxX - 70, y: frame.minY)
+                }
+                amplitude = 0
+            } else {
+                center = CGPoint(x: frame.maxX - 14, y: frame.minY + frame.height / 2)
+                amplitude = 0
+            }
         }
 
         walkPhase += 0.1
         let offset = sin(walkPhase) * amplitude
+        if amplitude > 0.5 {
+            let velocity = cos(walkPhase) * amplitude
+            if abs(velocity) > 0.2 {
+                model.direction = velocity > 0 ? 1 : -1
+            }
+        }
+
         let rect = NSRect(
             x: (center.x + offset - half).rounded(),
             y: (center.y - half).rounded(),
@@ -233,7 +268,7 @@ final class MascotController {
             .store(in: &cancellables)
     }
 
-    // MARK: - Idle behavior
+    // MARK: - Behavior
 
     private func scheduleBehavior() {
         behaviorTimer?.invalidate()
@@ -247,19 +282,96 @@ final class MascotController {
     }
 
     private func behaviorTick() {
+        if currentAction == .peek {
+            return
+        }
+
         if island.isExpanded {
             expandedPerch = expandedPerch == .header ? .bottom : .header
+            currentAction = Bool.random() ? .walk : .sit
             hop()
         } else if island.mediaService.isPlaying {
+            currentAction = Bool.random() ? .walk : .sit
             if Bool.random() { hop() }
             model.look = CGFloat.random(in: -1...1)
         } else if sleeping {
-            model.look = 0
+            currentAction = .sleep
         } else {
             model.look = CGFloat.random(in: -1...1)
-            if Bool.random() { hop() }
+            let roll = Int.random(in: 0..<10)
+            if roll < 3 {
+                currentAction = .walk
+                scheduleSit(after: 4)
+            } else if roll < 6 {
+                currentAction = .sit
+            } else if roll < 8 {
+                startPeek()
+            } else {
+                currentAction = .groom
+                scheduleSit(after: 3)
+            }
         }
     }
+
+    private func scheduleSit(after seconds: TimeInterval) {
+        sitWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.currentAction != .peek,
+                  !self.island.isExpanded,
+                  !self.island.mediaService.isPlaying else { return }
+            self.currentAction = .sit
+        }
+        sitWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    // MARK: - Peek-a-boo from the notch
+
+    private func startPeek() {
+        guard !island.isExpanded,
+              !island.mediaService.isPlaying,
+              !sleeping else { return }
+
+        sitWork?.cancel()
+        peekEndWork?.cancel()
+
+        currentAction = .peek
+        model.action = .peek
+        model.peekOffset = 9
+        model.direction = 1
+        model.look = CGFloat.random(in: -1...1)
+        Haptics.select()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self, self.currentAction == .peek else { return }
+            self.model.peekOffset = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+            guard let self, self.currentAction == .peek else { return }
+            self.model.peekOffset = 9
+        }
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.currentAction == .peek else { return }
+            self.currentAction = .sit
+            self.model.action = .sit
+            self.model.peekOffset = 0
+        }
+        peekEndWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8, execute: work)
+    }
+
+    private func cancelPeek() {
+        peekEndWork?.cancel()
+        peekEndWork = nil
+        if currentAction == .peek {
+            currentAction = .sit
+        }
+        model.peekOffset = 0
+    }
+
+    // MARK: - Blink
 
     private func scheduleBlink() {
         blinkTimer?.invalidate()

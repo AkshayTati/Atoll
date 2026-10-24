@@ -172,20 +172,6 @@ final class IslandController {
             }
             .store(in: &cancellables)
 
-        media.$title
-            .removeDuplicates()
-            .sink { [weak self] title in
-                guard let self else { return }
-                let changed = !title.isEmpty && title != self.lastPeekTitle
-                self.lastPeekTitle = title
-                guard changed, !self.state.expanded, self.media.isPlaying else { return }
-                let now = Date()
-                guard now.timeIntervalSince(self.lastPeekAt) > 3 else { return }
-                self.lastPeekAt = now
-                self.peek()
-            }
-            .store(in: &cancellables)
-
         multiMedia.$sources
             .sink { [weak self] _ in
                 self?.multiSourcesChanged()
