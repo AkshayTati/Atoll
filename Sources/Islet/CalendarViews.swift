@@ -297,6 +297,7 @@ struct CalendarModuleView: View {
 private struct CalendarDateWheel: View {
     @ObservedObject var calendar: CalendarService
     @State private var scrollID: Int?
+    @State private var centeredOffset: Int?
     @State private var programmaticScroll = false
     @State private var pendingSelection: DispatchWorkItem?
 
@@ -304,19 +305,26 @@ private struct CalendarDateWheel: View {
     private let future = 14
 
     var body: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 2) {
-                ForEach(-past...future, id: \.self) { offset in
-                    dayCell(offset)
-                        .id(offset)
+        ZStack {
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 2) {
+                    ForEach(-past...future, id: \.self) { offset in
+                        dayCell(offset)
+                            .id(offset)
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollIndicators(.never)
+            .scrollPosition(id: $scrollID, anchor: .center)
+            .scrollTargetBehavior(.viewAligned)
+            .contentMargins(.horizontal, 210, for: .scrollContent)
+
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                .frame(width: 38, height: 38)
+                .allowsHitTesting(false)
         }
-        .scrollIndicators(.never)
-        .scrollPosition(id: $scrollID, anchor: .center)
-        .scrollTargetBehavior(.viewAligned)
-        .contentMargins(.horizontal, 210, for: .scrollContent)
         .onAppear {
             scrollToSelectedDate(animated: false)
         }
@@ -324,7 +332,10 @@ private struct CalendarDateWheel: View {
             scrollToSelectedDate(animated: true)
         }
         .onChange(of: scrollID) { _, newValue in
-            guard !programmaticScroll, let newValue else { return }
+            guard let newValue else { return }
+            centeredOffset = newValue
+
+            guard !programmaticScroll else { return }
             pendingSelection?.cancel()
 
             let work = DispatchWorkItem {
@@ -334,12 +345,13 @@ private struct CalendarDateWheel: View {
                 }
             }
             pendingSelection = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
         }
     }
 
     private func scrollToSelectedDate(animated: Bool) {
         let target = offset(for: calendar.selectedDate)
+        centeredOffset = target
         guard scrollID != target else { return }
 
         programmaticScroll = true
@@ -358,9 +370,10 @@ private struct CalendarDateWheel: View {
         }
     }
 
-    private func dayCell(_ offset: Int) -> some View {
-        let date = date(for: offset)
-        let isSelected = Calendar.current.isDate(date, inSameDayAs: calendar.selectedDate)
+    private func dayCell(_ dayOffset: Int) -> some View {
+        let date = date(for: dayOffset)
+        let selectedOffset = centeredOffset ?? offset(for: calendar.selectedDate)
+        let isSelected = dayOffset == selectedOffset
         let isToday = Calendar.current.isDateInToday(date)
 
         return Button {
