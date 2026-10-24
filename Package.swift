@@ -13,6 +13,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Islet",
+            dependencies: ["MediaRemoteShim"],
             path: "Sources/Islet"
         ),
         .target(

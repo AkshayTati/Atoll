@@ -5,10 +5,12 @@
 
 typedef void (*IsletMRGetInfoFn)(dispatch_queue_t queue, void (^block)(CFDictionaryRef info));
 typedef unsigned char (*IsletMRSendCommandFn)(int command, CFDictionaryRef userInfo);
+typedef void (*IsletMRRegisterNotificationsFn)(dispatch_queue_t queue);
 
 static void *gHandle = NULL;
 static IsletMRGetInfoFn gGetInfo = NULL;
 static IsletMRSendCommandFn gSendCommand = NULL;
+static IsletMRRegisterNotificationsFn gRegisterNotifications = NULL;
 
 static void islet_mr_load(void) {
     const char *candidates[] = {
@@ -26,6 +28,8 @@ static void islet_mr_load(void) {
 
     gGetInfo = (IsletMRGetInfoFn)dlsym(gHandle, "MRMediaRemoteGetNowPlayingInfo");
     gSendCommand = (IsletMRSendCommandFn)dlsym(gHandle, "MRMediaRemoteSendCommand");
+    gRegisterNotifications = (IsletMRRegisterNotificationsFn)dlsym(
+        gHandle, "MRMediaRemoteRegisterForNowPlayingNotifications");
 }
 
 static void islet_mr_ensure_loaded(void) {
@@ -73,4 +77,13 @@ void islet_mr_send_command(int command) {
     if (gSendCommand != NULL) {
         (void)gSendCommand(command, NULL);
     }
+}
+
+bool islet_mr_register_notifications(void) {
+    islet_mr_ensure_loaded();
+    if (gRegisterNotifications == NULL) {
+        return false;
+    }
+    gRegisterNotifications(dispatch_get_main_queue());
+    return true;
 }

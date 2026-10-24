@@ -20,6 +20,10 @@ void islet_mr_request_now_playing(void (*callback)(CFDictionaryRef info, void *c
 /// 0 = play, 1 = pause, 2 = toggle play/pause, 3 = stop, 4 = next, 5 = previous.
 void islet_mr_send_command(int command);
 
+/// Ask MediaRemote to deliver now-playing change notifications into this
+/// process's NotificationCenter. Returns false when unsupported.
+bool islet_mr_register_notifications(void);
+
 #ifdef __cplusplus
 }
 #endif
