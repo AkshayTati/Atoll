@@ -36,7 +36,7 @@ struct IslandRootView: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             } else {
-                CollapsedMediaView(media: media, notchWidth: state.notchWidth)
+                CollapsedMediaView(media: media, calendar: calendar, notchWidth: state.notchWidth)
                     .transition(.opacity)
             }
         }
@@ -174,9 +174,16 @@ private struct ExpandedContent: View {
 
 private struct CollapsedMediaView: View {
     @ObservedObject var media: MediaService
+    @ObservedObject var calendar: CalendarService
     let notchWidth: CGFloat
 
     private let wingWidth: CGFloat = 28
+
+    private var showMedia: Bool { media.isPlaying }
+    private var showCalendar: Bool {
+        !showMedia && calendar.hasCollapsedEvent && calendar.nextEvent != nil
+    }
+    private var visible: Bool { showMedia || showCalendar }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -190,12 +197,13 @@ private struct CollapsedMediaView: View {
                 .frame(width: wingWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .opacity(media.hasTrack ? 1 : 0)
-        .animation(.easeOut(duration: 0.18), value: media.hasTrack)
+        .opacity(visible ? 1 : 0)
+        .animation(.easeOut(duration: 0.18), value: visible)
     }
 
+    @ViewBuilder
     private var leftWing: some View {
-        Group {
+        if showMedia {
             if let artwork = media.artwork {
                 Image(nsImage: artwork)
                     .resizable()
@@ -207,15 +215,47 @@ private struct CollapsedMediaView: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.55))
             }
+        } else if showCalendar {
+            Image(systemName: "calendar")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private var rightWing: some View {
-        Image(systemName: media.isPlaying ? "waveform" : "pause.fill")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.55))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if showMedia {
+            Image(systemName: media.isPlaying ? "waveform" : "pause.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+        } else if let next = calendar.nextEvent, showCalendar {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(countdown(for: next, now: context.date))
+                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        }
+    }
+
+    private func countdown(for event: CalendarService.Event, now: Date) -> String {
+        if event.start <= now && event.end > now {
+            return "Now"
+        }
+        if event.isAllDay {
+            return "Today"
+        }
+        let minutes = Int(event.start.timeIntervalSince(now) / 60)
+        if minutes < 1 {
+            return "Now"
+        }
+        if minutes < 60 {
+            return "\(minutes)m"
+        }
+        let hours = minutes / 60
+        if hours < 24 {
+            return "\(hours)h"
+        }
+        return "1d"
     }
 }
 
@@ -590,191 +630,5 @@ private struct MediaModuleView: View {
         guard time.isFinite, time > 0 else { return "0:00" }
         let total = Int(time.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
-    }
-}
-
-// MARK: - Calendar
-
-private struct CalendarModuleView: View {
-    @ObservedObject var calendar: CalendarService
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
-    private static let weekdayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE"
-        return formatter
-    }()
-
-    var body: some View {
-        Group {
-            switch calendar.status {
-            case .notDetermined:
-                connectCard
-            case .denied, .restricted, .writeOnly:
-                deniedCard
-            case .fullAccess, .authorized:
-                agenda
-            @unknown default:
-                connectCard
-            }
-        }
-    }
-
-    private var connectCard: some View {
-        VStack(spacing: 7) {
-            Image(systemName: "calendar.badge.plus")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(0.5))
-            Text("Connect your calendar")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
-            Text("Shows the next events from calendars already in Calendar.app.")
-                .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.35))
-                .multilineTextAlignment(.center)
-            Button(action: calendar.requestAccess) {
-                Text(calendar.loading ? "Requesting…" : "Allow access")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.white.opacity(0.9)))
-            }
-            .buttonStyle(.plain)
-            .disabled(calendar.loading)
-            .padding(.top, 2)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(cardBackground)
-    }
-
-    private var deniedCard: some View {
-        VStack(spacing: 7) {
-            Image(systemName: "calendar.badge.exclamationmark")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(0.5))
-            Text("Calendar access is off")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
-            Text("Allow Islet under Privacy & Security › Calendars.")
-                .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.35))
-            Button(action: openCalendarSettings) {
-                Text("Open Settings")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.white.opacity(0.9)))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 2)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(cardBackground)
-    }
-
-    private var agenda: some View {
-        VStack(spacing: 6) {
-            if calendar.events.isEmpty {
-                Text("No upcoming events")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.35))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 28)
-                    .background(cardBackground)
-            } else {
-                ForEach(calendar.events) { event in
-                    eventRow(event)
-                }
-            }
-        }
-    }
-
-    private func eventRow(_ event: CalendarService.Event) -> some View {
-        HStack(spacing: 9) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Color(nsColor: event.color))
-                .frame(width: 3, height: 30)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(1)
-                Text(subtitle(for: event))
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.38))
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 6)
-
-            if let url = event.joinURL {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Image(systemName: "video.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .frame(width: 24, height: 24)
-                        .background(Circle().fill(Color.white.opacity(0.06)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Join meeting")
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        )
-    }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.white.opacity(0.035))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
-            )
-    }
-
-    private func subtitle(for event: CalendarService.Event) -> String {
-        let day: String
-        if Calendar.current.isDateInToday(event.start) {
-            day = "Today"
-        } else if Calendar.current.isDateInTomorrow(event.start) {
-            day = "Tomorrow"
-        } else {
-            day = Self.weekdayFormatter.string(from: event.start)
-        }
-
-        let time = event.isAllDay ? "All day" : Self.timeFormatter.string(from: event.start)
-        var parts = [day, time]
-        if !event.calendarTitle.isEmpty {
-            parts.append(event.calendarTitle)
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private func openCalendarSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") else {
-            return
-        }
-        NSWorkspace.shared.open(url)
     }
 }

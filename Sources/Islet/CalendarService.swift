@@ -3,7 +3,8 @@ import Combine
 import EventKit
 import os
 
-/// Reads upcoming events from the same calendars Calendar.app uses.
+/// Reads the user's calendars through EventKit and exposes a day-centric
+/// agenda: selected day, a 3-week window, a day summary, and the next event.
 final class CalendarService: ObservableObject {
     struct Event: Identifiable {
         let id: String
@@ -13,17 +14,72 @@ final class CalendarService: ObservableObject {
         let isAllDay: Bool
         let color: NSColor
         let calendarTitle: String
+        let accountTitle: String
+        let location: String?
+        let notes: String?
+        let attendeeCount: Int
         let joinURL: URL?
+        let calendarAppURL: URL?
+
+        var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
+        var isInProgress: Bool { start <= Date() && end > Date() }
+        var isEnded: Bool { end <= Date() }
     }
 
-    @Published private(set) var events: [Event] = []
+    struct DaySummary {
+        let count: Int
+        let busy: TimeInterval
+    }
+
+    @Published private(set) var selectedDate = Calendar.current.startOfDay(for: Date())
+    @Published private(set) var selectedEvents: [Event] = []
+    @Published private(set) var nextEvent: Event?
     @Published private(set) var status = EKEventStore.authorizationStatus(for: .event)
     @Published private(set) var loading = false
     @Published private(set) var errorMessage: String?
 
     private let store = EKEventStore()
+    private var windowEvents: [Event] = []
+    private var windowStart = Date.distantPast
+    private var windowEnd = Date.distantFuture
     private var started = false
     private var changeObserver: NSObjectProtocol?
+    private var minuteTimer: Timer?
+
+    // MARK: - Derived state
+
+    var selectedDaySummary: DaySummary {
+        DaySummary(count: selectedEvents.count, busy: busyDuration(on: selectedDate))
+    }
+
+    var nextEventOnSelectedDay: Event? {
+        if Calendar.current.isDateInToday(selectedDate) {
+            return selectedEvents.first { $0.end > Date() }
+        }
+        return selectedEvents.first
+    }
+
+    func hasEvents(on date: Date) -> Bool {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: date)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            return false
+        }
+        return windowEvents.contains { $0.start < dayEnd && $0.end > dayStart }
+    }
+
+    var hasCollapsedEvent: Bool {
+        guard let nextEvent else { return false }
+        return nextEvent.start < Date().addingTimeInterval(24 * 3600)
+    }
+
+    var canMoveBack: Bool {
+        selectedDate > windowStart
+    }
+
+    var canMoveForward: Bool {
+        selectedDate < windowEnd.addingTimeInterval(-86400)
+    }
 
     // MARK: - Lifecycle
 
@@ -38,11 +94,17 @@ final class CalendarService: ObservableObject {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            self?.load()
+            self?.loadWindow()
         }
 
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            self?.updateNextEvent()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        minuteTimer = timer
+
         if status == .fullAccess || status == .authorized {
-            load()
+            loadWindow()
         }
     }
 
@@ -58,55 +120,186 @@ final class CalendarService: ObservableObject {
 
                 if let error {
                     self.errorMessage = error.localizedDescription
-                    print("calendar: \(error.localizedDescription)")
+                    Logger.app.info("calendar: \(error.localizedDescription, privacy: .public)")
                 }
-                print("calendar: access granted=\(granted) status=\(self.status.rawValue)")
-                Logger.app.info("calendar: granted=\(granted, privacy: .public) status=\(self.status.rawValue, privacy: .public)")
+                Logger.app.info(
+                    "calendar: granted=\(granted, privacy: .public) status=\(self.status.rawValue, privacy: .public)"
+                )
                 if granted {
-                    self.load()
+                    self.loadWindow()
                 }
             }
         }
     }
 
-    func load() {
-        let current = EKEventStore.authorizationStatus(for: .event)
-        guard current == .fullAccess || current == .authorized else { return }
+    func refresh() {
+        status = EKEventStore.authorizationStatus(for: .event)
+        if status == .fullAccess || status == .authorized {
+            loadWindow()
+        }
+    }
 
-        let now = Date()
-        let start = Calendar.current.startOfDay(for: now)
-        let end = Calendar.current.date(byAdding: .day, value: 8, to: start) ?? now
+    // MARK: - Navigation
+
+    func select(_ date: Date) {
+        let day = Calendar.current.startOfDay(for: date)
+        guard day != selectedDate else { return }
+        selectedDate = day
+
+        if day < windowStart || day >= windowEnd {
+            loadWindow()
+        } else {
+            applySelectedDay()
+        }
+    }
+
+    func moveDay(by offset: Int) {
+        let calendar = Calendar.current
+        guard let target = calendar.date(byAdding: .day, value: offset, to: selectedDate) else {
+            return
+        }
+        select(target)
+    }
+
+    func goToday() {
+        select(Date())
+    }
+
+    // MARK: - Loading
+
+    private func loadWindow() {
+        let current = EKEventStore.authorizationStatus(for: .event)
+        guard current == .fullAccess || current == .authorized else {
+            status = current
+            return
+        }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard let start = calendar.date(byAdding: .day, value: -7, to: today),
+              let end = calendar.date(byAdding: .day, value: 15, to: today) else {
+            return
+        }
+
+        windowStart = start
+        windowEnd = end
+        loading = true
+
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
 
         DispatchQueue.global(qos: .userInitiated).async { [store] in
             let found = store.events(matching: predicate)
-            let mapped = found
-                .filter { $0.status != .canceled && $0.endDate >= now }
-                .sorted { $0.startDate < $1.startDate }
-                .prefix(3)
-                .map { event -> Event in
-                    let color = event.calendar.flatMap { NSColor(cgColor: $0.cgColor) } ?? .systemBlue
-                    return Event(
-                        id: event.eventIdentifier ?? UUID().uuidString,
-                        title: event.title ?? "Untitled",
-                        start: event.startDate,
-                        end: event.endDate,
-                        isAllDay: event.isAllDay,
-                        color: color,
-                        calendarTitle: event.calendar?.title ?? "",
-                        joinURL: Self.joinURL(for: event)
-                    )
-                }
+            let mapped = found.compactMap { Self.makeEvent(from: $0) }
+                .sorted { $0.start < $1.start }
 
             DispatchQueue.main.async { [weak self] in
-                self?.events = Array(mapped)
-                print("calendar: loaded \(mapped.count) upcoming events")
-                Logger.app.info("calendar: loaded \(mapped.count, privacy: .public) upcoming events")
+                guard let self else { return }
+                self.windowEvents = mapped
+                self.loading = false
+                self.applySelectedDay()
+                Logger.app.info("calendar: loaded \(mapped.count, privacy: .public) events in window")
             }
         }
     }
 
-    // MARK: - Meeting links
+    private func applySelectedDay() {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: selectedDate)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            return
+        }
+
+        selectedEvents = windowEvents
+            .filter { $0.start < dayEnd && $0.end > dayStart }
+            .sorted { lhs, rhs in
+                if lhs.isAllDay != rhs.isAllDay {
+                    return lhs.isAllDay
+                }
+                if lhs.start != rhs.start {
+                    return lhs.start < rhs.start
+                }
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+
+        updateNextEvent()
+        Logger.app.info(
+            "calendar: \(self.selectedEvents.count, privacy: .public) events on \(self.selectedDate.formatted(date: .abbreviated, time: .omitted), privacy: .public)"
+        )
+    }
+
+    private func updateNextEvent() {
+        let now = Date()
+        nextEvent = windowEvents
+            .filter { $0.end > now }
+            .min { $0.start < $1.start }
+    }
+
+    // MARK: - Summary
+
+    private func busyDuration(on day: Date) -> TimeInterval {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            return 0
+        }
+
+        let intervals = selectedEvents
+            .filter { !$0.isAllDay }
+            .map { (max($0.start, dayStart), min($0.end, dayEnd)) }
+            .filter { $0.0 < $0.1 }
+            .sorted { $0.0 < $1.0 }
+
+        var total: TimeInterval = 0
+        var currentStart: Date?
+        var currentEnd: Date?
+
+        for (start, end) in intervals {
+            if let existingEnd = currentEnd, start <= existingEnd {
+                currentEnd = max(existingEnd, end)
+            } else {
+                if let currentStart, let currentEnd {
+                    total += currentEnd.timeIntervalSince(currentStart)
+                }
+                currentStart = start
+                currentEnd = end
+            }
+        }
+
+        if let currentStart, let currentEnd {
+            total += currentEnd.timeIntervalSince(currentStart)
+        }
+        return total
+    }
+
+    // MARK: - Mapping
+
+    private static func makeEvent(from event: EKEvent) -> Event? {
+        guard event.status != .canceled else { return nil }
+
+        if let me = event.attendees?.first(where: { $0.isCurrentUser }),
+           me.participantStatus == .declined {
+            return nil
+        }
+
+        let calendar = event.calendar
+        let identifier = event.eventIdentifier ?? UUID().uuidString
+
+        return Event(
+            id: identifier,
+            title: event.title ?? "Untitled",
+            start: event.startDate,
+            end: event.endDate,
+            isAllDay: event.isAllDay,
+            color: calendar?.color ?? .systemBlue,
+            calendarTitle: calendar?.title ?? "",
+            accountTitle: calendar?.source.title ?? "",
+            location: event.location?.trimmingCharacters(in: .whitespacesAndNewlines),
+            notes: event.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+            attendeeCount: event.attendees?.count ?? 0,
+            joinURL: joinURL(for: event),
+            calendarAppURL: calendarAppURL(for: event)
+        )
+    }
 
     private static let linkRegex = try! NSRegularExpression(
         pattern: #"https?://[^\s<>"']+"#,
@@ -133,5 +326,13 @@ final class CalendarService: ObservableObject {
         return links.first(where: { url in
             preferredHosts.contains(where: { url.host?.contains($0) == true })
         }) ?? links.first
+    }
+
+    private static func calendarAppURL(for event: EKEvent) -> URL? {
+        guard let identifier = event.eventIdentifier,
+              let encoded = identifier.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        return URL(string: "ical://ekevent/\(encoded)?method=show&options=more")
     }
 }

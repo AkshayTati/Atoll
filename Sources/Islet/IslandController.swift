@@ -93,7 +93,7 @@ final class IslandController {
         state.expanded = true
         media.refresh()
         audio.refresh()
-        calendar.load()
+        calendar.refresh()
         multiMedia.refresh()
         startSourcesTimer()
         animatePanel(to: expandedTarget(for: geometry))
@@ -130,7 +130,9 @@ final class IslandController {
     }
 
     private func collapsedTarget(for geometry: IslandGeometry) -> NSRect {
-        media.hasTrack ? geometry.activeCollapsedFrame : geometry.collapsedFrame
+        (media.isPlaying || calendar.hasCollapsedEvent)
+            ? geometry.activeCollapsedFrame
+            : geometry.collapsedFrame
     }
 
     private func observeMedia() {
@@ -146,6 +148,19 @@ final class IslandController {
                 self?.multiSourcesChanged()
             }
             .store(in: &cancellables)
+
+        calendar.$nextEvent
+            .sink { [weak self] _ in
+                self?.collapsedContentChanged()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func collapsedContentChanged() {
+        guard let geometry, !state.expanded, let panel else { return }
+        let target = collapsedTarget(for: geometry)
+        guard panel.frame != target else { return }
+        animatePanel(to: target)
     }
 
     private func multiSourcesChanged() {
@@ -160,10 +175,7 @@ final class IslandController {
     }
 
     private func mediaStateChanged() {
-        guard let geometry, !state.expanded, let panel else { return }
-        let target = collapsedTarget(for: geometry)
-        guard panel.frame != target else { return }
-        animatePanel(to: target)
+        collapsedContentChanged()
     }
 
     // MARK: - Panel
