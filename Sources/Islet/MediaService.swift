@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreImage
 import Foundation
 import os
 
@@ -17,6 +18,7 @@ final class MediaService: ObservableObject {
     @Published private(set) var sourceName = ""
     @Published private(set) var sourceIcon: NSImage?
     @Published private(set) var sourceBundleID = ""
+    @Published private(set) var accentColor = NSColor(calibratedRed: 0.12, green: 0.85, blue: 1.0, alpha: 1)
     @Published private(set) var isPlaying = false
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var elapsed: TimeInterval = 0
@@ -45,6 +47,8 @@ final class MediaService: ObservableObject {
     private var playbackRate: Double = 0
     private var tickTimer: Timer?
     private var lastPlaying = false
+    private let ciContext = CIContext(options: [.workingColorSpace: NSNull()])
+    private var accentGeneration = 0
 
     // MARK: - Lifecycle
 
@@ -265,6 +269,7 @@ final class MediaService: ObservableObject {
                 artwork = NSImage(data: data)
                 if let artwork {
                     Logger.app.info("media: artwork \(data.count, privacy: .public) bytes \(artwork.size.width, privacy: .public)x\(artwork.size.height, privacy: .public)")
+                    updateAccent(from: artwork)
                 }
             }
         } else if titleChanged {
@@ -272,6 +277,71 @@ final class MediaService: ObservableObject {
             // drop it when the track itself changed.
             artwork = nil
             lastArtworkData = nil
+            accentGeneration += 1
+            accentColor = NSColor(calibratedRed: 0.12, green: 0.85, blue: 1.0, alpha: 1)
+        }
+    }
+
+    private func updateAccent(from image: NSImage) {
+        accentGeneration += 1
+        let generation = accentGeneration
+
+        guard let tiff = image.tiffRepresentation,
+              let ciImage = CIImage(data: tiff) else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let extent = CIVector(cgRect: ciImage.extent)
+            guard let filter = CIFilter(
+                name: "CIAreaAverage",
+                parameters: [
+                    kCIInputImageKey: ciImage,
+                    kCIInputExtentKey: extent
+                ]
+            ), let output = filter.outputImage else {
+                return
+            }
+
+            var bitmap = [UInt8](repeating: 0, count: 4)
+            self.ciContext.render(
+                output,
+                toBitmap: &bitmap,
+                rowBytes: 4,
+                bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                format: .RGBA8,
+                colorSpace: nil
+            )
+
+            let raw = NSColor(
+                calibratedRed: CGFloat(bitmap[0]) / 255,
+                green: CGFloat(bitmap[1]) / 255,
+                blue: CGFloat(bitmap[2]) / 255,
+                alpha: 1
+            )
+            guard let rgb = raw.usingColorSpace(.deviceRGB) else { return }
+
+            var hue: CGFloat = 0
+            var saturation: CGFloat = 0
+            var brightness: CGFloat = 0
+            var alpha: CGFloat = 0
+            rgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+            let accent: NSColor
+            if saturation < 0.06 {
+                accent = NSColor(calibratedRed: 0.12, green: 0.85, blue: 1.0, alpha: 1)
+            } else {
+                accent = NSColor(
+                    calibratedHue: hue,
+                    saturation: min(max(saturation * 1.5, 0.45), 1),
+                    brightness: min(max(brightness * 1.15, 0.6), 1),
+                    alpha: 1
+                )
+            }
+
+            DispatchQueue.main.async {
+                guard generation == self.accentGeneration else { return }
+                self.accentColor = accent
+            }
         }
     }
 
@@ -310,6 +380,8 @@ final class MediaService: ObservableObject {
         lastArtworkData = nil
         lastBundleID = ""
         lastPlaying = false
+        accentGeneration += 1
+        accentColor = NSColor(calibratedRed: 0.12, green: 0.85, blue: 1.0, alpha: 1)
         state = [:]
         stopTicking()
     }

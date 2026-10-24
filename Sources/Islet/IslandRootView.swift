@@ -285,8 +285,8 @@ private struct MediaModuleView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if multi.sources.isEmpty {
-                mediaCard
+            if multi.sources.isEmpty || singleSource != nil {
+                singleMediaCard(singleSource)
             } else {
                 clientList
             }
@@ -294,132 +294,190 @@ private struct MediaModuleView: View {
         }
     }
 
-    private var mediaCard: some View {
-        HStack(alignment: .center, spacing: 16) {
-            artwork
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(media.hasTrack ? media.title : "Nothing playing")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(media.hasTrack ? 0.95 : 0.65))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Text(media.hasTrack ? media.artist : "Music, Spotify, Firefox, or a browser tab")
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 4)
-
-                if media.duration > 0 {
-                    progressBar
-
-                    HStack {
-                        Text(timeString(media.elapsed))
-                        Spacer()
-                        Text(timeString(media.duration))
-                    }
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .padding(.top, 1)
-                }
-
-                Spacer(minLength: 2)
-
-                controls
-            }
+    /// One client (or one actively playing client) gets the large card.
+    /// Two or more simultaneously playing clients get the compact list.
+    private var singleSource: MultiMediaService.Source? {
+        let playing = multi.sources.filter { $0.client.isPlaying }
+        if playing.count <= 1 {
+            return playing.first ?? multi.sources.first
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
+        return nil
+    }
+
+    private func singleMediaCard(_ source: MultiMediaService.Source?) -> some View {
+        let active = source == nil || media.sourceBundleID.isEmpty || source?.client.bundle == media.sourceBundleID
+        let title = active && !media.title.isEmpty ? media.title : (source?.client.title ?? media.title)
+        let artist = active && !media.artist.isEmpty ? media.artist : (source?.client.artist ?? media.artist)
+        let album = active && !media.album.isEmpty ? media.album : (source?.client.album ?? media.album)
+        let artwork = active
+            ? (media.artwork ?? source?.artwork ?? source?.appIcon)
+            : (source?.artwork ?? source?.appIcon)
+        let playing = active ? media.isPlaying : (source?.client.isPlaying ?? false)
+        let duration = active ? media.duration : (source?.client.duration ?? 0)
+        let elapsed = active ? media.elapsed : (source?.client.elapsed ?? 0)
+        let hasTrack = !title.isEmpty
+        let accent = Color(nsColor: media.accentColor)
+        let progress = duration > 0 ? min(max(elapsed / duration, 0), 1) : 0
+
+        return ZStack {
+            if let artwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .blur(radius: 30)
+                    .overlay(
+                        LinearGradient(
+                            colors: [.black.opacity(0.25), .black.opacity(0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            } else {
+                LinearGradient(
+                    colors: [accent.opacity(0.22), .black.opacity(0.92)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+
+            Circle()
+                .fill(accent.opacity(0.28))
+                .frame(width: 190, height: 190)
+                .blur(radius: 45)
+                .offset(x: -170, y: 40)
+
+            HStack(spacing: 16) {
+                singleArtwork(artwork, accent: accent)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(hasTrack ? title : "Nothing playing")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(hasTrack ? 0.96 : 0.7))
+                        .lineLimit(1)
+
+                    Text(hasTrack ? artist : "Music, Spotify, Firefox, or a browser tab")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+
+                    if hasTrack, !album.isEmpty {
+                        Text(album)
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.3))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    if duration > 0 {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.12))
+                                Capsule()
+                                    .fill(accent)
+                                    .frame(width: max(2, geo.size.width * progress))
+                            }
+                        }
+                        .frame(height: 3)
+
+                        HStack {
+                            Text(timeString(elapsed))
+                            Spacer()
+                            Text(timeString(duration))
+                        }
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.3))
+                    }
+
+                    Spacer(minLength: 2)
+
+                    singleControls(hasTrack: hasTrack, playing: playing, active: active)
+                }
+            }
+            .padding(16)
+        }
+        .frame(height: 158)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(accent.opacity(hasTrack ? 0.22 : 0.08), lineWidth: 1)
         )
     }
 
-    private var artwork: some View {
+    private func singleArtwork(_ image: NSImage?, accent: Color) -> some View {
         Group {
-            if let artwork = media.artwork {
-                Image(nsImage: artwork)
+            if let image {
+                Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
                 LinearGradient(
-                    colors: [.white.opacity(0.12), .white.opacity(0.03)],
+                    colors: [accent.opacity(0.35), .white.opacity(0.04)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 .overlay(
                     Image(systemName: "music.note")
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
                 )
             }
         }
-        .frame(width: 96, height: 96)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(width: 112, height: 112)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+        .shadow(color: accent.opacity(0.45), radius: 18, y: 6)
     }
 
-    private var progressBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.12))
-                Capsule()
-                    .fill(Color.white.opacity(0.8))
-                    .frame(width: max(2, geo.size.width * media.progress))
-            }
-        }
-        .frame(height: 3)
-    }
-
-    private var controls: some View {
-        HStack(spacing: 22) {
-            Button(action: media.previous) {
+    private func singleControls(hasTrack: Bool, playing: Bool, active: Bool) -> some View {
+        HStack(spacing: 20) {
+            Button {
+                Haptics.select()
+                if active { media.previous() }
+            } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(media.hasTrack ? 0.8 : 0.25))
-                    .frame(width: 28, height: 28)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 26, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!media.hasTrack)
 
-            Button(action: media.togglePlayPause) {
+            Button {
+                Haptics.select()
+                if active { media.togglePlayPause() }
+            } label: {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(media.hasTrack ? 0.92 : 0.2))
-                    Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(media.hasTrack ? Color.black : Color.white.opacity(0.3))
-                        .offset(x: media.isPlaying ? 0 : 1)
+                        .fill(Color.white.opacity(0.92))
+                    Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.black)
+                        .offset(x: playing ? 0 : 1)
                 }
-                .frame(width: 32, height: 32)
+                .frame(width: 36, height: 36)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(!media.hasTrack)
 
-            Button(action: media.next) {
+            Button {
+                Haptics.select()
+                if active { media.next() }
+            } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(media.hasTrack ? 0.8 : 0.25))
-                    .frame(width: 28, height: 28)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 26, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!media.hasTrack)
         }
+        .disabled(!active || !hasTrack)
+        .opacity(active && hasTrack ? 1 : 0.3)
     }
 
     // MARK: Audio output

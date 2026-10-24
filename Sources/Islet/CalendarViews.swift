@@ -15,7 +15,10 @@ struct CalendarModuleView: View {
                 deniedCard
             case .fullAccess, .authorized:
                 calendarContent
-                    .onAppear { calendar.refresh() }
+                    .onAppear {
+                        calendar.goToday()
+                        calendar.refresh()
+                    }
             @unknown default:
                 connectCard
             }
@@ -337,6 +340,9 @@ private struct CalendarDateWheel: View {
         .frame(maxWidth: .infinity)
         .onAppear {
             scrollToSelectedDate(animated: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                scrollToSelectedDate(animated: false)
+            }
         }
         .onChange(of: calendar.selectedDate) { _, _ in
             scrollToSelectedDate(animated: true)
