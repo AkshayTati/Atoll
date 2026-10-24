@@ -34,15 +34,15 @@ struct IslandRootView: View {
                     calendar: calendar,
                     multiMedia: multiMedia
                 )
-                .transition(.opacity)
+                .transition(.identity)
             } else {
                 CollapsedMediaView(media: media, calendar: calendar, notchWidth: state.notchWidth)
-                    .transition(.opacity)
+                    .transition(.identity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.clear)
-        .animation(.timingCurve(0.2, 0.9, 0.25, 1.0, duration: 0.24), value: state.expanded)
+        .animation(.timingCurve(0.2, 0.9, 0.25, 1.0, duration: 0.16), value: state.expanded)
     }
 }
 
@@ -247,11 +247,19 @@ private struct CollapsedMediaView: View {
     }
 
     private func countdown(for event: CalendarService.Event, now: Date) -> String {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let eventDay = calendar.startOfDay(for: event.start)
+        let dayDelta = calendar.dateComponents([.day], from: today, to: eventDay).day ?? 0
+
+        if event.isAllDay {
+            if dayDelta <= 0 { return "Today" }
+            if dayDelta == 1 { return "1d" }
+            return "\(dayDelta)d"
+        }
+
         if event.start <= now && event.end > now {
             return "Now"
-        }
-        if event.isAllDay {
-            return "Today"
         }
         let minutes = Int(event.start.timeIntervalSince(now) / 60)
         if minutes < 1 {
@@ -264,8 +272,7 @@ private struct CollapsedMediaView: View {
         if hours < 24 {
             return "\(hours)h"
         }
-        let days = hours / 24
-        return days < 7 ? "\(days)d" : ""
+        return "\(max(1, dayDelta))d"
     }
 }
 

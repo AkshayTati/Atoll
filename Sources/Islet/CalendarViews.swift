@@ -459,9 +459,13 @@ private struct CalendarSummaryView: View {
                 Spacer(minLength: 4)
 
                 if let next = calendar.nextEventOnSelectedDay {
-                    Text("Next \(next.start.formatted(date: .omitted, time: .shortened))")
-                    if Calendar.current.isDateInToday(next.start) {
-                        Text("· \(relativeText(next.start, now: context.date))")
+                    if next.isAllDay {
+                        Text("Next all-day")
+                    } else {
+                        Text("Next \(next.start.formatted(date: .omitted, time: .shortened))")
+                        if Calendar.current.isDateInToday(next.start) {
+                            Text("· \(relativeText(next.start, now: context.date))")
+                        }
                     }
                 }
             }

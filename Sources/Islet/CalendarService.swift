@@ -91,14 +91,14 @@ final class CalendarService: ObservableObject {
 
         changeObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged,
-            object: store,
+            object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.loadWindow()
         }
 
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            self?.updateNextEvent()
+            self?.refresh()
         }
         RunLoop.main.add(timer, forMode: .common)
         minuteTimer = timer
@@ -232,6 +232,9 @@ final class CalendarService: ObservableObject {
         nextEvent = windowEvents
             .filter { $0.end > now }
             .min { $0.start < $1.start }
+        Logger.app.info(
+            "calendar: next=\(self.nextEvent?.title ?? "none", privacy: .public) at \(self.nextEvent?.start.formatted(date: .abbreviated, time: .shortened) ?? "none", privacy: .public)"
+        )
     }
 
     // MARK: - Summary

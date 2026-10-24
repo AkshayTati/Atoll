@@ -272,7 +272,7 @@ final class IslandController {
         let generation = animationGeneration
         isAnimatingPanel = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.24
+            context.duration = 0.16
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1.0)
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(frame, display: true)
@@ -345,6 +345,6 @@ final class IslandController {
             self.collapse()
         }
         collapseWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
     }
 }
