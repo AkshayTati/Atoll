@@ -82,6 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(mascotItem)
         self.mascotItem = mascotItem
 
+        let peekItem = NSMenuItem(title: "Cat: Peek-a-Boo", action: #selector(peekCat), keyEquivalent: "")
+        peekItem.target = self
+        menu.addItem(peekItem)
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Islet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
@@ -119,5 +123,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let mascot else { return }
         mascot.setEnabled(!mascot.isEnabled)
         mascotItem?.state = mascot.isEnabled ? .on : .off
+    }
+
+    @objc private func peekCat() {
+        mascot?.forcePeek()
     }
 }

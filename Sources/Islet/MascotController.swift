@@ -144,7 +144,7 @@ final class MascotController {
         if expanded || playing {
             idleSince = nil
             sleeping = false
-            if currentAction == .peek {
+            if expanded && currentAction == .peek {
                 cancelPeek()
             }
         } else if idleSince == nil {
@@ -291,9 +291,14 @@ final class MascotController {
             currentAction = Bool.random() ? .walk : .sit
             hop()
         } else if island.mediaService.isPlaying {
-            currentAction = Bool.random() ? .walk : .sit
-            if Bool.random() { hop() }
-            model.look = CGFloat.random(in: -1...1)
+            let roll = Int.random(in: 0..<10)
+            if roll < 2 {
+                startPeek()
+            } else {
+                currentAction = Bool.random() ? .walk : .sit
+                if Bool.random() { hop() }
+                model.look = CGFloat.random(in: -1...1)
+            }
         } else if sleeping {
             currentAction = .sleep
         } else {
@@ -328,10 +333,9 @@ final class MascotController {
 
     // MARK: - Peek-a-boo from the notch
 
-    private func startPeek() {
-        guard !island.isExpanded,
-              !island.mediaService.isPlaying,
-              !sleeping else { return }
+    private func startPeek(force: Bool = false) {
+        guard !island.isExpanded else { return }
+        guard force || !sleeping else { return }
 
         sitWork?.cancel()
         peekEndWork?.cancel()
@@ -342,6 +346,7 @@ final class MascotController {
         model.direction = 1
         model.look = CGFloat.random(in: -1...1)
         Haptics.select()
+        Logger.app.info("cat: peek-a-boo")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, self.currentAction == .peek else { return }
@@ -369,6 +374,21 @@ final class MascotController {
             currentAction = .sit
         }
         model.peekOffset = 0
+    }
+
+    /// Manual trigger from the menu, so you can always see the notch peek.
+    func forcePeek() {
+        sleeping = false
+        idleSince = nil
+
+        if island.isExpanded {
+            island.collapse()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.startPeek(force: true)
+            }
+        } else {
+            startPeek(force: true)
+        }
     }
 
     // MARK: - Blink
