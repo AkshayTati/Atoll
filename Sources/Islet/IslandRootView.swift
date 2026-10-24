@@ -89,7 +89,8 @@ private struct ExpandedContent: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(.bottom, 10)
+                .frame(height: notchHeight)
+                .padding(.bottom, 8)
 
             Group {
                 switch state.activeModule {
@@ -107,7 +108,7 @@ private struct ExpandedContent: View {
             footer
         }
         .padding(.horizontal, 16)
-        .padding(.top, notchHeight + 10)
+        .padding(.top, 0)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -397,7 +398,7 @@ private struct MediaModuleView: View {
             }
             .padding(16)
         }
-        .frame(height: 158)
+        .frame(height: 180)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -424,7 +425,7 @@ private struct MediaModuleView: View {
                 )
             }
         }
-        .frame(width: 112, height: 112)
+        .frame(width: 124, height: 124)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
