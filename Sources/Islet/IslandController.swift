@@ -20,6 +20,7 @@ final class IslandController {
     private var screenObserver: Any?
     private var wakeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var sourcesTimer: Timer?
     private var started = false
 
     // MARK: - Lifecycle
@@ -63,6 +64,7 @@ final class IslandController {
     }
 
     func stop() {
+        stopSourcesTimer()
         media.stop()
     }
 
@@ -90,6 +92,7 @@ final class IslandController {
         media.refresh()
         audio.refresh()
         calendar.load()
+        startSourcesTimer()
         animatePanel(to: geometry.expandedFrame)
         print("island expanded")
         Logger.app.info("island expanded")
@@ -100,9 +103,25 @@ final class IslandController {
         collapseWorkItem?.cancel()
         holdUntil = nil
         state.expanded = false
+        stopSourcesTimer()
         animatePanel(to: collapsedTarget(for: geometry))
         print("island collapsed")
         Logger.app.info("island collapsed")
+    }
+
+    private func startSourcesTimer() {
+        stopSourcesTimer()
+        audio.refreshSources()
+        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.audio.refreshSources()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        sourcesTimer = timer
+    }
+
+    private func stopSourcesTimer() {
+        sourcesTimer?.invalidate()
+        sourcesTimer = nil
     }
 
     private func collapsedTarget(for geometry: IslandGeometry) -> NSRect {
@@ -133,6 +152,7 @@ final class IslandController {
             Logger.app.info("no notched display found; island hidden")
             panel?.orderOut(nil)
             self.geometry = nil
+            stopSourcesTimer()
             return
         }
 

@@ -3,13 +3,11 @@ import CoreGraphics
 
 enum IslandModule: String, CaseIterable {
     case media
-    case sound
     case calendar
 
     var title: String {
         switch self {
         case .media: return "Media"
-        case .sound: return "Sound"
         case .calendar: return "Calendar"
         }
     }
@@ -17,7 +15,6 @@ enum IslandModule: String, CaseIterable {
     var icon: String {
         switch self {
         case .media: return "play.circle.fill"
-        case .sound: return "speaker.wave.2.fill"
         case .calendar: return "calendar"
         }
     }

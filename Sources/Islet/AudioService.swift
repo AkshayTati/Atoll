@@ -12,10 +12,20 @@ final class AudioService: ObservableObject {
         let symbol: String
     }
 
+    struct Source: Identifiable {
+        let id: String
+        let pid: pid_t
+        let name: String
+        let icon: NSImage?
+
+        var bundleID: String { id }
+    }
+
     @Published private(set) var outputs: [Device] = []
     @Published private(set) var currentOutputID: AudioDeviceID = 0
     @Published private(set) var currentOutputName = "No output"
     @Published private(set) var volume: Double = 0.5
+    @Published private(set) var sources: [Source] = []
 
     private let system = AudioObjectID(kAudioObjectSystemObject)
     private var started = false
@@ -28,6 +38,7 @@ final class AudioService: ObservableObject {
         started = true
         installListeners()
         refresh()
+        refreshSources()
     }
 
     func refresh() {
@@ -100,6 +111,86 @@ final class AudioService: ObservableObject {
             ?? volumeScalar(currentOutputID, element: 2) {
             volume = Double(scalar)
         }
+    }
+
+    // MARK: - Audio sources
+
+    /// Every app currently producing audio, one entry per bundle ID.
+    func refreshSources() {
+        var found: [String: Source] = [:]
+
+        for process in allProcessObjectIDs() {
+            guard uint32Property(process, kAudioProcessPropertyIsRunningOutput) == 1,
+                  let bundleID = stringProperty(process, kAudioProcessPropertyBundleID),
+                  !bundleID.isEmpty,
+                  bundleID != Bundle.main.bundleIdentifier,
+                  found[bundleID] == nil else {
+                continue
+            }
+
+            let pid = pidProperty(process) ?? 0
+            let app = NSRunningApplication(processIdentifier: pid)
+            let name = app?.localizedName ?? appName(for: bundleID) ?? bundleID
+            let icon = app?.icon ?? iconForBundle(bundleID)
+            found[bundleID] = Source(id: bundleID, pid: pid, name: name, icon: icon)
+        }
+
+        let sorted = found.values.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        let signature = sorted.map { "\($0.bundleID)|\($0.name)" }
+        let existing = sources.map { "\($0.bundleID)|\($0.name)" }
+        if signature != existing {
+            sources = sorted
+            Logger.app.info("audio: sources \(sorted.map(\.name).joined(separator: ", "), privacy: .public)")
+        }
+    }
+
+    private func allProcessObjectIDs() -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else {
+            return []
+        }
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        var ids = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else {
+            return []
+        }
+        return ids
+    }
+
+    private func pidProperty(_ id: AudioObjectID) -> pid_t? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyPID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: pid_t = 0
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else {
+            return nil
+        }
+        return value
+    }
+
+    private func appName(for bundleID: String) -> String? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+        return FileManager.default.displayName(atPath: url.path)
+            .replacingOccurrences(of: ".app", with: "")
+    }
+
+    private func iconForBundle(_ bundleID: String) -> NSImage? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+        return NSWorkspace.shared.icon(forFile: url.path)
     }
 
     // MARK: - HAL helpers

@@ -89,9 +89,7 @@ private struct ExpandedContent: View {
             Group {
                 switch state.activeModule {
                 case .media:
-                    MediaModuleView(media: media)
-                case .sound:
-                    SoundModuleView(audio: audio)
+                    MediaModuleView(media: media, audio: audio)
                 case .calendar:
                     CalendarModuleView(calendar: calendar)
                 }
@@ -122,18 +120,25 @@ private struct ExpandedContent: View {
             }
             Spacer()
             HStack(spacing: 5) {
-                if let icon = media.sourceIcon {
+                if state.activeModule == .media, let icon = media.sourceIcon {
                     Image(nsImage: icon)
                         .resizable()
                         .frame(width: 12, height: 12)
                 }
-                Text(media.sourceName.isEmpty ? state.activeModule.title.uppercased() : media.sourceName.uppercased())
+                Text(headerLabel)
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .tracking(1.2)
                     .foregroundStyle(.white.opacity(0.28))
                     .lineLimit(1)
             }
         }
+    }
+
+    private var headerLabel: String {
+        if state.activeModule == .media, !media.sourceName.isEmpty {
+            return media.sourceName.uppercased()
+        }
+        return state.activeModule.title.uppercased()
     }
 
     private var footer: some View {
@@ -215,8 +220,17 @@ private struct CollapsedMediaView: View {
 
 private struct MediaModuleView: View {
     @ObservedObject var media: MediaService
+    @ObservedObject var audio: AudioService
 
     var body: some View {
+        VStack(spacing: 8) {
+            mediaCard
+            outputBar
+            sourcesStrip
+        }
+    }
+
+    private var mediaCard: some View {
         HStack(alignment: .center, spacing: 16) {
             artwork
 
@@ -344,135 +358,142 @@ private struct MediaModuleView: View {
         }
     }
 
-    private func timeString(_ time: TimeInterval) -> String {
-        guard time.isFinite, time > 0 else { return "0:00" }
-        let total = Int(time.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-}
-
-// MARK: - Sound
-
-private struct SoundModuleView: View {
-    @ObservedObject var audio: AudioService
+    // MARK: Audio output
 
     private var currentSymbol: String {
         audio.outputs.first(where: { $0.id == audio.currentOutputID })?.symbol ?? "hifispeaker.fill"
     }
 
-    var body: some View {
-        VStack(spacing: 9) {
-            currentCard
-            deviceGrid
-        }
-    }
-
-    private var currentCard: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(width: 38, height: 38)
-                Image(systemName: currentSymbol)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(audio.currentOutputName)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(1)
-                Text("OUTPUT")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.3))
-            }
-
-            Spacer(minLength: 12)
-
-            HStack(spacing: 7) {
-                Image(systemName: audio.volume <= 0.001 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.4))
-                Slider(
-                    value: Binding(
-                        get: { audio.volume },
-                        set: { audio.setVolume($0) }
-                    ),
-                    in: 0...1
-                )
-                .controlSize(.mini)
-                .tint(.white.opacity(0.85))
-                .frame(width: 128)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    private var deviceGrid: some View {
-        Group {
-            if audio.outputs.isEmpty {
-                Text("No output devices")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
-            } else {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-                    spacing: 8
-                ) {
-                    ForEach(Array(audio.outputs.prefix(6))) { device in
-                        deviceButton(device)
+    private var outputBar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(audio.outputs) { device in
+                    Button {
+                        audio.setOutput(device)
+                    } label: {
+                        Label(
+                            device.name,
+                            systemImage: device.id == audio.currentOutputID ? "checkmark" : device.symbol
+                        )
                     }
                 }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: currentSymbol)
+                        .font(.system(size: 10, weight: .medium))
+                    Text(audio.currentOutputName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 150, alignment: .leading)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.65))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.white.opacity(0.06)))
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+
+            Spacer(minLength: 8)
+
+            Image(systemName: audio.volume <= 0.001 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.35))
+
+            Slider(
+                value: Binding(
+                    get: { audio.volume },
+                    set: { audio.setVolume($0) }
+                ),
+                in: 0...1
+            )
+            .controlSize(.mini)
+            .tint(.white.opacity(0.8))
+            .frame(width: 90)
+        }
+        .frame(height: 24)
+    }
+
+    // MARK: Sources
+
+    @ViewBuilder
+    private var sourcesStrip: some View {
+        let items = Array(displaySources.prefix(8))
+        if !items.isEmpty {
+            HStack(spacing: 7) {
+                Text("AUDIO")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .tracking(1.1)
+                    .foregroundStyle(.white.opacity(0.22))
+
+                ForEach(items) { source in
+                    sourceIcon(source)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(height: 20)
         }
     }
 
-    private func deviceButton(_ device: AudioService.Device) -> some View {
-        let active = device.id == audio.currentOutputID
-        return Button {
-            audio.setOutput(device)
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: device.symbol)
-                    .font(.system(size: 11, weight: .medium))
-                Text(device.name)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
-                if active {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8, weight: .bold))
+    private var displaySources: [AudioService.Source] {
+        var list = audio.sources
+        if !media.sourceBundleID.isEmpty,
+           !list.contains(where: { $0.bundleID == media.sourceBundleID }) {
+            list.insert(
+                AudioService.Source(
+                    id: media.sourceBundleID,
+                    pid: 0,
+                    name: media.sourceName.isEmpty ? media.sourceBundleID : media.sourceName,
+                    icon: media.sourceIcon
+                ),
+                at: 0
+            )
+        }
+        return list
+    }
+
+    private func sourceIcon(_ source: AudioService.Source) -> some View {
+        let active = source.bundleID == media.sourceBundleID
+        let producing = audio.sources.contains(where: { $0.bundleID == source.bundleID })
+
+        return ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let icon = source.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: "app.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.5))
                 }
             }
-            .foregroundStyle(.white.opacity(active ? 0.9 : 0.5))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Color.white.opacity(active ? 0.1 : 0.035))
-            )
+            .frame(width: 16, height: 16)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.white.opacity(active ? 0.16 : 0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.white.opacity(active ? 0.55 : 0.12), lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            Circle()
+                .fill(producing ? Color.green : Color.white.opacity(0.25))
+                .frame(width: 4, height: 4)
+                .offset(x: 1, y: 1)
         }
-        .buttonStyle(.plain)
+        .frame(width: 20, height: 20)
+        .help(source.name)
+    }
+
+    private func timeString(_ time: TimeInterval) -> String {
+        guard time.isFinite, time > 0 else { return "0:00" }
+        let total = Int(time.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

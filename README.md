@@ -4,9 +4,17 @@ A dynamic-island-style notch app for macOS, built for one person: me.
 
 ## Status
 
-Phase 1 — notch shell, media controls, sound switching, and calendar.
-Media goes through the `media-control` CLI because macOS 15.4+ blocks direct
-MediaRemote access from third-party apps.
+Phase 2 — notch shell, media controls, calendar, and audio output control
+integrated into the media panel.
+
+- Media goes through the `media-control` CLI because macOS 15.4+ blocks
+  direct MediaRemote access from third-party apps.
+- The old Sound tab is gone. Output device + volume live in the media card.
+- The AUDIO strip lists every app currently producing audio (CoreAudio
+  process objects), with the active Now Playing source highlighted.
+- Output switching is **system-wide**, not per-app. macOS has no public
+  per-app output API; true routing would require a process-tap mixer or a
+  virtual audio driver.
 
 ## Dependencies
 

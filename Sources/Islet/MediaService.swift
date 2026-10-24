@@ -16,6 +16,7 @@ final class MediaService: ObservableObject {
     @Published private(set) var artwork: NSImage?
     @Published private(set) var sourceName = ""
     @Published private(set) var sourceIcon: NSImage?
+    @Published private(set) var sourceBundleID = ""
     @Published private(set) var isPlaying = false
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var elapsed: TimeInterval = 0
@@ -276,6 +277,7 @@ final class MediaService: ObservableObject {
 
     private func updateSource() {
         let bundleID = state["bundleIdentifier"] as? String ?? ""
+        sourceBundleID = bundleID
         guard bundleID != lastBundleID else { return }
         lastBundleID = bundleID
 
@@ -298,6 +300,7 @@ final class MediaService: ObservableObject {
         artwork = nil
         sourceName = ""
         sourceIcon = nil
+        sourceBundleID = ""
         isPlaying = false
         duration = 0
         elapsed = 0
