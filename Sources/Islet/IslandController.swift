@@ -76,6 +76,8 @@ final class IslandController {
     var isPeeking: Bool { state.peeking }
     var hasNotchedScreen: Bool { geometry != nil }
     var currentPanelFrame: NSRect { panel?.frame ?? .zero }
+    var notchWidth: CGFloat { geometry?.notchWidth ?? 179 }
+    var notchHeight: CGFloat { geometry?.notchHeight ?? 32 }
     var onExpand: (() -> Void)?
 
     var mascotEnabled = true {
