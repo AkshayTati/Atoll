@@ -201,6 +201,17 @@ final class IslandController {
 
     private func peek() {
         guard let geometry, !state.expanded else { return }
+
+        // Never start a peek while the island is mid-expand/collapse, or it
+        // looks like a wide flash rather than a deliberate side reveal.
+        guard !isAnimatingPanel else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, !self.state.expanded else { return }
+                self.peek()
+            }
+            return
+        }
+
         peekWorkItem?.cancel()
         state.peeking = true
         Haptics.select()

@@ -176,7 +176,7 @@ final class MascotController {
                 amplitude = 26
             }
         } else if peeking {
-            center = CGPoint(x: frame.maxX - 18, y: frame.minY + 16)
+            center = CGPoint(x: frame.minX + 18, y: frame.minY)
             amplitude = 4
         } else if playing {
             center = CGPoint(x: frame.maxX - 20, y: frame.minY)
