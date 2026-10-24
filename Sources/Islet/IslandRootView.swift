@@ -194,6 +194,7 @@ private struct CollapsedMediaView: View {
         !showMedia && calendar.hasCollapsedEvent && calendar.nextEvent != nil
     }
     private var visible: Bool { showMedia || showCalendar }
+    private var accent: Color { Color(nsColor: media.accentColor) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -214,17 +215,33 @@ private struct CollapsedMediaView: View {
     @ViewBuilder
     private var leftWing: some View {
         if showMedia {
-            if let artwork = media.artwork {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 18, height: 18)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            } else {
-                Image(systemName: "music.note")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.28))
+                    .frame(width: 24, height: 24)
+                    .blur(radius: 5)
+
+                if let artwork = media.artwork {
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 18, height: 18)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                } else {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+
+                if media.duration > 0 {
+                    Circle()
+                        .trim(from: 0, to: media.progress)
+                        .stroke(accent, style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 24, height: 24)
+                }
             }
+            .frame(width: 26, height: 26)
         } else if showCalendar {
             Image(systemName: "calendar")
                 .font(.system(size: 9, weight: .semibold))
@@ -235,9 +252,7 @@ private struct CollapsedMediaView: View {
     @ViewBuilder
     private var rightWing: some View {
         if showMedia {
-            Image(systemName: media.isPlaying ? "waveform" : "pause.fill")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
+            LiveEqualizer(color: accent)
         } else if let next = calendar.nextEvent, showCalendar {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(countdown(for: next, now: context.date))
@@ -274,6 +289,33 @@ private struct CollapsedMediaView: View {
             return "\(hours)h"
         }
         return "\(max(1, dayDelta))d"
+    }
+}
+
+private struct LiveEqualizer: View {
+    let color: Color
+    @State private var animate = false
+
+    private let tall: [CGFloat] = [10, 5, 9]
+    private let short: [CGFloat] = [4, 11, 6]
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(0..<3, id: \.self) { index in
+                Capsule()
+                    .fill(color)
+                    .frame(width: 2, height: animate ? tall[index] : short[index])
+                    .animation(
+                        .easeInOut(duration: 0.42 + Double(index) * 0.09)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.09),
+                        value: animate
+                    )
+            }
+        }
+        .frame(height: 12, alignment: .bottom)
+        .shadow(color: color.opacity(0.6), radius: 3)
+        .onAppear { animate = true }
     }
 }
 
@@ -320,86 +362,88 @@ private struct MediaModuleView: View {
         let accent = Color(nsColor: media.accentColor)
         let progress = duration > 0 ? min(max(elapsed / duration, 0), 1) : 0
 
-        return ZStack {
-            if let artwork {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .blur(radius: 30)
-                    .overlay(
-                        LinearGradient(
-                            colors: [.black.opacity(0.25), .black.opacity(0.85)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            } else {
-                LinearGradient(
-                    colors: [accent.opacity(0.22), .black.opacity(0.92)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
+        return HStack(spacing: 16) {
+            singleArtwork(artwork, accent: accent)
 
-            Circle()
-                .fill(accent.opacity(0.28))
-                .frame(width: 190, height: 190)
-                .blur(radius: 45)
-                .offset(x: -170, y: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(hasTrack ? title : "Nothing playing")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(hasTrack ? 0.96 : 0.7))
+                    .lineLimit(1)
 
-            HStack(spacing: 16) {
-                singleArtwork(artwork, accent: accent)
+                Text(hasTrack ? artist : "Music, Spotify, Firefox, or a browser tab")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(hasTrack ? title : "Nothing playing")
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(hasTrack ? 0.96 : 0.7))
-                        .lineLimit(1)
-
-                    Text(hasTrack ? artist : "Music, Spotify, Firefox, or a browser tab")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-
-                    if hasTrack, !album.isEmpty {
-                        Text(album)
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.3))
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 4)
-
-                    if duration > 0 {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.12))
-                                Capsule()
-                                    .fill(accent)
-                                    .frame(width: max(2, geo.size.width * progress))
-                            }
-                        }
-                        .frame(height: 3)
-
-                        HStack {
-                            Text(timeString(elapsed))
-                            Spacer()
-                            Text(timeString(duration))
-                        }
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                if hasTrack, !album.isEmpty {
+                    Text(album)
+                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.3))
-                    }
-
-                    Spacer(minLength: 2)
-
-                    singleControls(hasTrack: hasTrack, playing: playing, active: active)
+                        .lineLimit(1)
                 }
-                .frame(height: 148, alignment: .topLeading)
+
+                Spacer(minLength: 4)
+
+                if duration > 0 {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.12))
+                            Capsule()
+                                .fill(accent)
+                                .frame(width: max(2, geo.size.width * progress))
+                        }
+                    }
+                    .frame(height: 3)
+
+                    HStack {
+                        Text(timeString(elapsed))
+                        Spacer()
+                        Text(timeString(duration))
+                    }
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.3))
+                }
+
+                Spacer(minLength: 2)
+
+                singleControls(hasTrack: hasTrack, playing: playing, active: active)
             }
-            .padding(16)
+            .frame(height: 148, alignment: .topLeading)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 180)
+        .background {
+            ZStack {
+                if let artwork {
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .blur(radius: 30)
+                        .overlay(
+                            LinearGradient(
+                                colors: [.black.opacity(0.25), .black.opacity(0.85)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                } else {
+                    LinearGradient(
+                        colors: [accent.opacity(0.22), .black.opacity(0.92)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+
+                Circle()
+                    .fill(accent.opacity(0.28))
+                    .frame(width: 190, height: 190)
+                    .blur(radius: 45)
+                    .offset(x: -170, y: 40)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
