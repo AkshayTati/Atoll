@@ -10,6 +10,7 @@ final class IslandController {
     private let audio = AudioService()
     private let calendar = CalendarService()
     private let multiMedia = MultiMediaService()
+    private let settings = AtollSettings.shared
     private var panel: IslandPanel?
     private var geometry: IslandGeometry?
 
@@ -35,6 +36,7 @@ final class IslandController {
         guard !started else { return }
         started = true
 
+        state.activeModule = settings.defaultModule
         media.start()
         audio.start()
         calendar.start()
@@ -72,6 +74,7 @@ final class IslandController {
 
     var audioService: AudioService { audio }
     var mediaService: MediaService { media }
+    var calendarService: CalendarService { calendar }
     var isExpanded: Bool { state.expanded }
     var isPeeking: Bool { state.peeking }
     var hasNotchedScreen: Bool { geometry != nil }
@@ -115,6 +118,7 @@ final class IslandController {
         peekWorkItem?.cancel()
         peekWorkItem = nil
         state.peeking = false
+        state.activeModule = settings.defaultModule
         onExpand?()
         state.expanded = true
         media.refresh()
@@ -161,7 +165,9 @@ final class IslandController {
         if state.peeking {
             return geometry.peekFrame
         }
-        return (media.isPlaying || calendar.hasCollapsedEvent || mascotEnabled)
+        let showMedia = settings.showMediaInCollapsed && media.isPlaying
+        let showCalendar = settings.showCalendarInCollapsed && calendar.hasCollapsedEvent
+        return (showMedia || showCalendar || mascotEnabled)
             ? geometry.activeCollapsedFrame
             : geometry.collapsedFrame
     }
@@ -182,6 +188,14 @@ final class IslandController {
 
         calendar.$nextEvent
             .sink { [weak self] _ in
+                self?.collapsedContentChanged()
+            }
+            .store(in: &cancellables)
+
+        settings.$showMediaInCollapsed
+            .combineLatest(settings.$showCalendarInCollapsed)
+            .dropFirst()
+            .sink { [weak self] _, _ in
                 self?.collapsedContentChanged()
             }
             .store(in: &cancellables)
@@ -374,8 +388,8 @@ final class IslandController {
         }
 
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
-            guard let self else { return event }
-            if !self.state.expanded {
+            guard let self, let panel = self.panel else { return event }
+            if !self.state.expanded, event.window === panel {
                 self.expand()
             }
             return event
@@ -391,7 +405,7 @@ final class IslandController {
             if !frame.contains(point) {
                 scheduleCollapse()
             }
-        } else if geometry.activeHotZone.contains(point) {
+        } else if settings.expandOnHover && geometry.activeHotZone.contains(point) {
             expand()
         }
     }

@@ -190,14 +190,17 @@ private struct ExpandedContent: View {
 private struct CollapsedMediaView: View {
     @ObservedObject var media: MediaService
     @ObservedObject var calendar: CalendarService
+    @ObservedObject private var settings = AtollSettings.shared
     let notchWidth: CGFloat
     let isPeeking: Bool
 
     private let wingWidth: CGFloat = 28
 
-    private var showMedia: Bool { media.isPlaying }
+    private var showMedia: Bool {
+        settings.showMediaInCollapsed && media.isPlaying
+    }
     private var showCalendar: Bool {
-        !showMedia && calendar.hasCollapsedEvent && calendar.nextEvent != nil
+        settings.showCalendarInCollapsed && !showMedia && calendar.hasCollapsedEvent && calendar.nextEvent != nil
     }
     private var visible: Bool { isPeeking || showMedia || showCalendar }
     private var accent: Color { Color(nsColor: media.accentColor) }
@@ -373,10 +376,11 @@ private struct MediaModuleView: View {
     @ObservedObject var media: MediaService
     @ObservedObject var audio: AudioService
     @ObservedObject var multi: MultiMediaService
+    @ObservedObject private var settings = AtollSettings.shared
 
     var body: some View {
         VStack(spacing: 8) {
-            if multi.sources.isEmpty || singleSource != nil {
+            if visibleSources.isEmpty || singleSource != nil {
                 singleMediaCard(singleSource)
             } else {
                 clientList
@@ -385,12 +389,16 @@ private struct MediaModuleView: View {
         }
     }
 
+    private var visibleSources: [MultiMediaService.Source] {
+        settings.showAllMediaClients ? multi.sources : []
+    }
+
     /// One client (or one actively playing client) gets the large card.
     /// Two or more simultaneously playing clients get the compact list.
     private var singleSource: MultiMediaService.Source? {
-        let playing = multi.sources.filter { $0.client.isPlaying }
+        let playing = visibleSources.filter { $0.client.isPlaying }
         if playing.count <= 1 {
-            return playing.first ?? multi.sources.first
+            return playing.first ?? visibleSources.first
         }
         return nil
     }

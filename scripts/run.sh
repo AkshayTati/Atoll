@@ -21,7 +21,10 @@ echo $! >"$ROOT/build/log.pid"
 
 # Launch through LaunchServices so TCC attributes Calendar access to Atoll
 # rather than to the terminal.
-open -n "$ROOT/build/Atoll.app"
+if ! open -n "$ROOT/build/Atoll.app"; then
+  echo "could not launch through LaunchServices; open build/Atoll.app manually"
+  exit 1
+fi
 
 echo "Atoll launched"
 echo "log: $ROOT/build/atoll.log"

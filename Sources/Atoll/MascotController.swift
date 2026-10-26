@@ -57,6 +57,7 @@ final class MascotController {
     private var peekWork: DispatchWorkItem?
     private var islandMoveWork: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
+    private let settings = AtollSettings.shared
 
     private var enabled: Bool
     private var currentCenter: CGPoint?
@@ -80,7 +81,7 @@ final class MascotController {
 
     init(island: IslandController) {
         self.island = island
-        self.enabled = UserDefaults.standard.object(forKey: "showMascot") as? Bool ?? true
+        self.enabled = AtollSettings.shared.catEnabled
         island.mascotEnabled = enabled
     }
 
@@ -89,17 +90,35 @@ final class MascotController {
     // MARK: - Lifecycle
 
     func start() {
-        guard enabled else { return }
         CatSpriteLibrary.shared.preload()
-        createPanel()
-        startPositionTimer()
-        scheduleBehavior()
         observeMedia()
+
+        settings.$catEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                self?.applyEnabled(enabled)
+            }
+            .store(in: &cancellables)
+
+        settings.$catBehaviorPace
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.scheduleBehavior()
+            }
+            .store(in: &cancellables)
     }
 
     func setEnabled(_ enabled: Bool) {
+        if settings.catEnabled != enabled {
+            settings.catEnabled = enabled
+        } else {
+            applyEnabled(enabled)
+        }
+    }
+
+    private func applyEnabled(_ enabled: Bool) {
+        guard self.enabled != enabled || (enabled && panel == nil) else { return }
         self.enabled = enabled
-        UserDefaults.standard.set(enabled, forKey: "showMascot")
         island.mascotEnabled = enabled
 
         if enabled {
@@ -194,7 +213,8 @@ final class MascotController {
             }
         } else if idleSince == nil {
             idleSince = now
-        } else if now.timeIntervalSince(idleSince!) > 45,
+        } else if let sleepDelay = settings.catSleepDelay.seconds,
+                  now.timeIntervalSince(idleSince!) > sleepDelay,
                   !sleeping,
                   !isBusy,
                   !isPeeking {
@@ -472,7 +492,7 @@ final class MascotController {
                 wake()
                 return
             }
-            guard !isBusy, !isPeeking else { return }
+            guard settings.catHoverGreeting, !isBusy, !isPeeking else { return }
             perform(.greet, duration: 1.3)
         } else {
             wasHovered = false
@@ -485,6 +505,7 @@ final class MascotController {
             .dropFirst()
             .sink { [weak self] title in
                 guard let self,
+                      self.enabled,
                       !title.isEmpty,
                       !self.sleeping,
                       !self.isPeeking,
@@ -498,7 +519,8 @@ final class MascotController {
 
     private func scheduleBehavior() {
         behaviorTimer?.invalidate()
-        let timer = Timer(timeInterval: Double.random(in: 4.0...8.0), repeats: false) { [weak self] _ in
+        let interval = settings.catBehaviorPace.interval
+        let timer = Timer(timeInterval: Double.random(in: interval), repeats: false) { [weak self] _ in
             guard let self, self.enabled else { return }
             self.behaviorTick()
             self.scheduleBehavior()
@@ -643,6 +665,7 @@ final class MascotController {
 
     private func startPeek(force: Bool = false) {
         guard !island.isExpanded, !sleeping else { return }
+        if !force, island.mediaService.isPlaying, !settings.catPeekWhilePlaying { return }
         if isPeeking && !force { return }
         if force {
             cancelPeek()

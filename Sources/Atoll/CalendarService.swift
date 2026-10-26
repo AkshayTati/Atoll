@@ -31,14 +31,32 @@ final class CalendarService: ObservableObject {
         let busy: TimeInterval
     }
 
+    struct CalendarInfo: Identifiable {
+        let id: String
+        let title: String
+        let color: NSColor
+        let accountTitle: String
+        let accountType: String
+    }
+
+    struct CalendarGroup: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let calendars: [CalendarInfo]
+    }
+
     @Published private(set) var selectedDate = Calendar.current.startOfDay(for: Date())
     @Published private(set) var selectedEvents: [Event] = []
     @Published private(set) var nextEvent: Event?
     @Published private(set) var status = EKEventStore.authorizationStatus(for: .event)
     @Published private(set) var loading = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var calendarGroups: [CalendarGroup] = []
 
     private let store = EKEventStore()
+    private let settings = AtollSettings.shared
+    private var cancellables = Set<AnyCancellable>()
     private var windowEvents: [Event] = []
     private var windowStart = Date.distantPast
     private var windowEnd = Date.distantFuture
@@ -94,6 +112,7 @@ final class CalendarService: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            self?.loadCalendars()
             self?.loadWindow()
         }
 
@@ -103,7 +122,23 @@ final class CalendarService: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         minuteTimer = timer
 
+        settings.$calendarFilterEnabled
+            .combineLatest(settings.$selectedCalendarIDs)
+            .dropFirst()
+            .sink { [weak self] _, _ in
+                self?.loadWindow()
+            }
+            .store(in: &cancellables)
+
+        settings.$calendarShowAllDay
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.loadWindow()
+            }
+            .store(in: &cancellables)
+
         if status == .fullAccess || status == .authorized {
+            loadCalendars()
             loadWindow()
         }
     }
@@ -126,6 +161,7 @@ final class CalendarService: ObservableObject {
                     "calendar: granted=\(granted, privacy: .public) status=\(self.status.rawValue, privacy: .public)"
                 )
                 if granted {
+                    self.loadCalendars()
                     self.loadWindow()
                 }
             }
@@ -135,6 +171,7 @@ final class CalendarService: ObservableObject {
     func refresh() {
         status = EKEventStore.authorizationStatus(for: .event)
         if status == .fullAccess || status == .authorized {
+            loadCalendars()
             loadWindow()
         }
     }
@@ -167,6 +204,67 @@ final class CalendarService: ObservableObject {
 
     // MARK: - Loading
 
+    func loadCalendars() {
+        let calendars = store.calendars(for: .event)
+        var grouped: [String: (title: String, subtitle: String, calendars: [EKCalendar])] = [:]
+
+        for calendar in calendars {
+            let source = calendar.source
+            let identifier = source?.sourceIdentifier ?? source?.title ?? "other"
+            let title = source?.title ?? "Other"
+            let subtitle = Self.accountTypeName(source?.sourceType)
+            grouped[identifier, default: (title, subtitle, [])].calendars.append(calendar)
+        }
+
+        calendarGroups = grouped
+            .map { identifier, value in
+                let items = value.calendars
+                    .map { calendar in
+                        CalendarInfo(
+                            id: calendar.calendarIdentifier,
+                            title: calendar.title.isEmpty ? "Untitled" : calendar.title,
+                            color: calendar.color,
+                            accountTitle: value.title,
+                            accountType: value.subtitle
+                        )
+                    }
+                    .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+
+                return CalendarGroup(
+                    id: identifier,
+                    title: value.title,
+                    subtitle: value.subtitle,
+                    calendars: items
+                )
+            }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+
+        Logger.app.info(
+            "calendar: \(self.calendarGroups.count, privacy: .public) account groups, \(calendars.count, privacy: .public) calendars"
+        )
+    }
+
+    private static func accountTypeName(_ type: EKSourceType?) -> String {
+        guard let type else { return "Calendar" }
+        switch type {
+        case .local: return "On My Mac"
+        case .exchange: return "Exchange"
+        case .calDAV: return "CalDAV"
+        case .mobileMe: return "iCloud"
+        case .subscribed: return "Subscribed"
+        case .birthdays: return "Birthdays"
+        @unknown default: return "Calendar"
+        }
+    }
+
+    private func selectedCalendars() -> [EKCalendar]? {
+        guard settings.calendarFilterEnabled else { return nil }
+        let selected = settings.selectedCalendarIDs
+        return store.calendars(for: .event).filter {
+            selected.contains($0.calendarIdentifier)
+        }
+    }
+
     private func loadWindow() {
         let current = EKEventStore.authorizationStatus(for: .event)
         guard current == .fullAccess || current == .authorized else {
@@ -185,11 +283,16 @@ final class CalendarService: ObservableObject {
         windowEnd = end
         loading = true
 
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let predicate = store.predicateForEvents(
+            withStart: start,
+            end: end,
+            calendars: selectedCalendars()
+        )
+        let showAllDay = settings.calendarShowAllDay
 
         DispatchQueue.global(qos: .userInitiated).async { [store] in
             let found = store.events(matching: predicate)
-            let mapped = found.compactMap { Self.makeEvent(from: $0) }
+            let mapped = found.compactMap { Self.makeEvent(from: $0, showAllDay: showAllDay) }
                 .sorted { $0.start < $1.start }
 
             DispatchQueue.main.async { [weak self] in
@@ -276,8 +379,9 @@ final class CalendarService: ObservableObject {
 
     // MARK: - Mapping
 
-    private static func makeEvent(from event: EKEvent) -> Event? {
+    private static func makeEvent(from event: EKEvent, showAllDay: Bool) -> Event? {
         guard event.status != .canceled else { return nil }
+        if event.isAllDay && !showAllDay { return nil }
 
         if let me = event.attendees?.first(where: { $0.isCurrentUser }),
            me.participantStatus == .declined {

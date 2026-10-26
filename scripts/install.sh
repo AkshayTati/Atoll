@@ -22,7 +22,9 @@ rm -rf "$HOME/Applications/Islet.app" "$HOME/Applications/Nook.app"
 # install. `make run` will rebuild it for development.
 rm -rf "$ROOT/build/Atoll.app" "$ROOT/build/Islet.app" "$ROOT/build/Nook.app"
 
-open "$DEST"
+if ! open "$DEST"; then
+  echo "installed, but could not launch automatically; open $DEST"
+fi
 
 echo "installed $DEST"
 echo "Enable 'Launch at Login' from the Atoll menu-bar icon."

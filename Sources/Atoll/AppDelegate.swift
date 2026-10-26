@@ -2,12 +2,13 @@ import AppKit
 import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let settings = AtollSettings.shared
+
     private var island: IslandController?
     private var hud: HUDController?
     private var mascot: MascotController?
+    private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem?
-    private var launchAtLoginItem: NSMenuItem?
-    private var hudItem: NSMenuItem?
     private var mascotItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,11 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         mascot.start()
         self.mascot = mascot
 
+        ShortcutManager.shared.onToggleCat = { [weak self] in
+            self?.toggleMascot()
+        }
+        ShortcutManager.shared.start()
+
         installStatusItem()
 
-        // Show off once on launch so there is something visible immediately.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
-            self?.island?.expand(temporarilyFor: 4.0)
+        if settings.showIntroOnLaunch {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                self?.island?.expand(temporarilyFor: 4.0)
+            }
         }
     }
 
@@ -60,31 +67,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.target = self
         menu.addItem(toggle)
 
-        let launch = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        launch.target = self
-        launch.state = LaunchAtLogin.isEnabled ? .on : .off
-        menu.addItem(launch)
-        launchAtLoginItem = launch
-
-        let hudItem = NSMenuItem(title: "Enable HUD Control…", action: #selector(enableHUD), keyEquivalent: "")
-        hudItem.target = self
-        hudItem.state = hud?.isEnabled == true ? .on : .off
-        menu.addItem(hudItem)
-        self.hudItem = hudItem
-
-        let testHUD = NSMenuItem(title: "Test HUD Line", action: #selector(testHUDLine), keyEquivalent: "")
-        testHUD.target = self
-        menu.addItem(testHUD)
-
         let mascotItem = NSMenuItem(title: "Show Cat", action: #selector(toggleMascot), keyEquivalent: "")
         mascotItem.target = self
-        mascotItem.state = mascot?.isEnabled == true ? .on : .off
+        mascotItem.state = settings.catEnabled ? .on : .off
         menu.addItem(mascotItem)
         self.mascotItem = mascotItem
 
         let peekItem = NSMenuItem(title: "Cat: Peek-a-Boo", action: #selector(peekCat), keyEquivalent: "")
         peekItem.target = self
         menu.addItem(peekItem)
+
+        menu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Atoll", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -97,35 +98,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
-        hudItem?.state = hud?.isEnabled == true ? .on : .off
-        mascotItem?.state = mascot?.isEnabled == true ? .on : .off
+        mascotItem?.state = settings.catEnabled ? .on : .off
     }
 
     @objc private func toggleIsland() {
         island?.toggleExpanded()
     }
 
-    @objc private func toggleLaunchAtLogin() {
-        LaunchAtLogin.set(!LaunchAtLogin.isEnabled)
-        launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
-    }
-
-    @objc private func enableHUD() {
-        hud?.requestAccess()
-    }
-
-    @objc private func testHUDLine() {
-        hud?.showTest()
-    }
-
     @objc private func toggleMascot() {
-        guard let mascot else { return }
-        mascot.setEnabled(!mascot.isEnabled)
-        mascotItem?.state = mascot.isEnabled ? .on : .off
+        settings.catEnabled.toggle()
+        mascotItem?.state = settings.catEnabled ? .on : .off
     }
 
     @objc private func peekCat() {
         mascot?.forcePeek()
+    }
+
+    @objc private func openSettings() {
+        guard let island, let hud, let mascot else { return }
+
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(
+                calendar: island.calendarService,
+                hud: hud,
+                mascot: mascot
+            )
+        }
+        settingsWindow?.show()
     }
 }

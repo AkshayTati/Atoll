@@ -10,9 +10,8 @@
 	<string>Atoll</string>
 	<key>CFBundleIconFile</key>
 	<string>Atoll</string>
-	<!-- Kept from the original app so Calendar and Accessibility grants survive the rename. -->
 	<key>CFBundleIdentifier</key>
-	<string>com.akshay.islet</string>
+	<string>com.akshay.atoll</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -37,5 +36,7 @@
 	<string>Atoll shows your upcoming events in the notch.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Atoll uses Apple Events to control music players when the system media API is unavailable.</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Atoll uses Accessibility to capture the volume and brightness keys for its HUD.</string>
 </dict>
 </plist>

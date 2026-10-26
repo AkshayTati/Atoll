@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Combine
 import SwiftUI
 import os
 
@@ -12,15 +13,20 @@ final class HUDPanel: NSPanel {
     }
 }
 
-final class HUDController {
+final class HUDController: ObservableObject {
+    @Published private(set) var accessibilityTrusted = AXIsProcessTrusted()
+
     private let audio: AudioService
     private let brightness = BrightnessService()
     private let state = HUDState()
     private let isIslandExpanded: () -> Bool
+    private let settings = AtollSettings.shared
 
     private var panel: HUDPanel?
     private var tap: MediaKeyTap?
     private var hideWorkItem: DispatchWorkItem?
+    private var permissionTimer: Timer?
+    private var settingsCancellables = Set<AnyCancellable>()
 
     init(audio: AudioService, isIslandExpanded: @escaping () -> Bool) {
         self.audio = audio
@@ -35,11 +41,46 @@ final class HUDController {
 
     func start() {
         brightness.start()
-        if AXIsProcessTrusted() {
-            installTap()
+        startPermissionTimer()
+
+        settings.$hudEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                self?.applyEnabled(enabled)
+            }
+            .store(in: &settingsCancellables)
+    }
+
+    private func applyEnabled(_ enabled: Bool) {
+        if enabled {
+            if AXIsProcessTrusted() {
+                installTapIfPossible()
+            } else {
+                Logger.app.info("hud: waiting for Accessibility permission")
+            }
         } else {
-            Logger.app.info("hud: waiting for Accessibility permission")
+            uninstallTap()
+            hide()
         }
+    }
+
+    private func startPermissionTimer() {
+        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let trusted = AXIsProcessTrusted()
+            guard trusted != self.accessibilityTrusted else { return }
+            self.accessibilityTrusted = trusted
+            if trusted, self.settings.hudEnabled {
+                self.installTapIfPossible()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        permissionTimer = timer
+    }
+
+    private func uninstallTap() {
+        tap?.stop()
+        tap = nil
     }
 
     func requestAccess() {
@@ -64,7 +105,7 @@ final class HUDController {
     }
 
     private func installTapIfPossible() {
-        guard tap == nil, AXIsProcessTrusted() else { return }
+        guard tap == nil, settings.hudEnabled, AXIsProcessTrusted() else { return }
         installTap()
     }
 
@@ -72,7 +113,7 @@ final class HUDController {
         let tap = MediaKeyTap()
         tap.shouldHandle = { [weak self] in
             guard let self else { return false }
-            return self.tap != nil && !self.isIslandExpanded()
+            return self.tap != nil && self.settings.hudEnabled && !self.isIslandExpanded()
         }
         tap.brightnessAvailable = { [weak self] in
             self?.brightness.available ?? false
@@ -122,7 +163,19 @@ final class HUDController {
     // MARK: - HUD panel
 
     private func show(kind: HUDKind, value: Double, muted: Bool) {
-        guard !isIslandExpanded() else { return }
+        guard settings.hudEnabled, !isIslandExpanded() else { return }
+
+        switch kind {
+        case .volume:
+            if muted {
+                guard settings.hudShowMute else { return }
+            } else {
+                guard settings.hudShowVolume else { return }
+            }
+        case .brightness:
+            guard settings.hudShowBrightness else { return }
+        }
+
         guard let panel = ensurePanel() else { return }
 
         state.kind = kind
@@ -137,7 +190,10 @@ final class HUDController {
             self?.hide()
         }
         hideWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0.4, settings.hudDuration),
+            execute: work
+        )
     }
 
     func hide() {
