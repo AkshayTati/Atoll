@@ -264,6 +264,11 @@ struct SettingsView: View {
         Form {
             Section("HUD") {
                 Toggle("Show HUD line", isOn: $settings.hudEnabled)
+
+                Button("Test HUD line") {
+                    hud.showTest()
+                }
+                .disabled(!settings.hudEnabled)
             }
 
             Section("Controls") {
@@ -282,26 +287,60 @@ struct SettingsView: View {
             }
             .disabled(!settings.hudEnabled)
 
-            Section("Accessibility") {
+            Section("Permissions") {
+                permissionRow(
+                    "Accessibility",
+                    granted: hud.accessibilityTrusted,
+                    action: hud.requestAccess
+                )
+                permissionRow(
+                    "Input Monitoring",
+                    granted: hud.inputMonitoringTrusted,
+                    action: hud.requestInputMonitoring
+                )
+
                 HStack(spacing: 8) {
-                    Image(systemName: hud.accessibilityTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(hud.accessibilityTrusted ? .green : .orange)
-                    Text(hud.accessibilityTrusted ? "Accessibility granted" : "Accessibility is required")
+                    Image(systemName: hud.tapInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(hud.tapInstalled ? .green : .orange)
+                    Text(hud.tapInstalled ? "Media keys active" : "Media keys inactive")
                     Spacer()
-                    if !hud.accessibilityTrusted {
-                        Button("Open Settings") {
-                            hud.requestAccess()
-                        }
+                    Button("Check Again") {
+                        hud.refreshPermissions()
                     }
                 }
 
-                Button("Test HUD line") {
-                    hud.showTest()
+                HStack {
+                    Button("Reset Permissions & Re-grant") {
+                        hud.resetPermissions()
+                    }
+                    Button("Restart Atoll") {
+                        hud.restartApp()
+                    }
                 }
-                .disabled(!settings.hudEnabled)
+
+                Text("Grant access to the installed Atoll app in ~/Applications. If it still says required, restart Atoll. Use Reset only if a previous grant is stale.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+
         }
         .formStyle(.grouped)
+    }
+
+    private func permissionRow(
+        _ title: String,
+        granted: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(granted ? .green : .orange)
+            Text(granted ? "\(title) granted" : "\(title) is required")
+            Spacer()
+            if !granted {
+                Button("Open Settings", action: action)
+            }
+        }
     }
 
     private var catSettings: some View {

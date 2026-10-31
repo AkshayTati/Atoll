@@ -24,8 +24,8 @@ An atoll is a small island. This one lives at the top of your screen.
   EventKit. Choose which calendars or accounts contribute events in Settings.
   No Google/Outlook OAuth.
 - **Audio** — system output switching, volume, and mute controls.
-- **Neon HUD** — a compact segmented volume / brightness / mute readout with
-  percentage, icon, and neon glow, driven by a global media-key tap.
+- **Neon HUD** — a thin volume / brightness / mute line with a neon glow,
+  driven by a global media-key tap.
 - **Cat** — a CC0 pixel cat walks, sneaks, runs, grooms, stretches, yawns,
   sleeps, plays, chases a butterfly, and peeks around the left/right edges of
   the notch. Hover to say hi; click to open the island or pet her. A global

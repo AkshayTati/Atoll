@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Combine
+import IOKit.hidsystem
 import SwiftUI
 import os
 
@@ -15,6 +16,9 @@ final class HUDPanel: NSPanel {
 
 final class HUDController: ObservableObject {
     @Published private(set) var accessibilityTrusted = AXIsProcessTrusted()
+    @Published private(set) var inputMonitoringTrusted =
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    @Published private(set) var tapInstalled = false
 
     private let audio: AudioService
     private let brightness = BrightnessService()
@@ -26,6 +30,8 @@ final class HUDController: ObservableObject {
     private var tap: MediaKeyTap?
     private var hideWorkItem: DispatchWorkItem?
     private var permissionTimer: Timer?
+    private var activationObserver: NSObjectProtocol?
+    private var lastInstallAttempt = Date.distantPast
     private var settingsCancellables = Set<AnyCancellable>()
 
     init(audio: AudioService, isIslandExpanded: @escaping () -> Bool) {
@@ -34,14 +40,23 @@ final class HUDController: ObservableObject {
     }
 
     var isEnabled: Bool {
-        tap != nil
+        tapInstalled
     }
 
     // MARK: - Lifecycle
 
     func start() {
         brightness.start()
+        refreshPermissions()
         startPermissionTimer()
+
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshPermissions()
+        }
 
         settings.$hudEnabled
             .removeDuplicates()
@@ -53,26 +68,42 @@ final class HUDController: ObservableObject {
 
     private func applyEnabled(_ enabled: Bool) {
         if enabled {
-            if AXIsProcessTrusted() {
-                installTapIfPossible()
-            } else {
-                Logger.app.info("hud: waiting for Accessibility permission")
-            }
+            refreshPermissions()
         } else {
             uninstallTap()
             hide()
         }
     }
 
+    func refreshPermissions() {
+        let ax = AXIsProcessTrusted()
+        let inputMonitoring =
+            IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+
+        if ax != accessibilityTrusted {
+            accessibilityTrusted = ax
+            Logger.app.info("hud: accessibility trusted=\(ax, privacy: .public)")
+        }
+        if inputMonitoring != inputMonitoringTrusted {
+            inputMonitoringTrusted = inputMonitoring
+            Logger.app.info("hud: input monitoring trusted=\(inputMonitoring, privacy: .public)")
+        }
+
+        guard settings.hudEnabled else {
+            uninstallTap()
+            return
+        }
+
+        if ax && inputMonitoring {
+            installTapIfPossible()
+        } else {
+            uninstallTap()
+        }
+    }
+
     private func startPermissionTimer() {
         let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let trusted = AXIsProcessTrusted()
-            guard trusted != self.accessibilityTrusted else { return }
-            self.accessibilityTrusted = trusted
-            if trusted, self.settings.hudEnabled {
-                self.installTapIfPossible()
-            }
+            self?.refreshPermissions()
         }
         RunLoop.main.add(timer, forMode: .common)
         permissionTimer = timer
@@ -81,6 +112,7 @@ final class HUDController: ObservableObject {
     private func uninstallTap() {
         tap?.stop()
         tap = nil
+        tapInstalled = false
     }
 
     func requestAccess() {
@@ -88,6 +120,7 @@ final class HUDController: ObservableObject {
             kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
         ] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+        _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
 
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
@@ -95,7 +128,48 @@ final class HUDController: ObservableObject {
 
         for delay in [1.0, 3.0, 6.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.installTapIfPossible()
+                self?.refreshPermissions()
+            }
+        }
+    }
+
+    func requestInputMonitoring() {
+        _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            NSWorkspace.shared.open(url)
+        }
+
+        for delay in [1.0, 3.0, 6.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.refreshPermissions()
+            }
+        }
+    }
+
+    func resetPermissions() {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.akshay.atoll"
+        for service in ["Accessibility", "ListenEvent"] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, bundleID]
+            try? process.run()
+            process.waitUntilExit()
+        }
+        refreshPermissions()
+        requestAccess()
+    }
+
+    func restartApp() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { _, error in
+            guard error == nil else { return }
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
             }
         }
     }
@@ -105,8 +179,20 @@ final class HUDController: ObservableObject {
     }
 
     private func installTapIfPossible() {
-        guard tap == nil, settings.hudEnabled, AXIsProcessTrusted() else { return }
+        guard tap == nil,
+              settings.hudEnabled,
+              accessibilityTrusted,
+              inputMonitoringTrusted,
+              Date().timeIntervalSince(lastInstallAttempt) > 5 else { return }
+        lastInstallAttempt = Date()
         installTap()
+    }
+
+    deinit {
+        permissionTimer?.invalidate()
+        if let activationObserver {
+            NotificationCenter.default.removeObserver(activationObserver)
+        }
     }
 
     private func installTap() {
@@ -136,8 +222,10 @@ final class HUDController: ObservableObject {
 
         if tap.start() {
             self.tap = tap
+            tapInstalled = true
             Logger.app.info("hud: key tap installed")
         } else {
+            tapInstalled = false
             Logger.app.info("hud: key tap failed")
         }
     }
@@ -210,11 +298,11 @@ final class HUDController: ObservableObject {
     private func ensurePanel() -> HUDPanel? {
         guard let geometry = IslandGeometry.resolve() else { return nil }
 
-        let size = NSSize(width: 240, height: 34)
+        let size = NSSize(width: 200, height: 20)
         let notchBottom = geometry.screen.frame.maxY - geometry.notchHeight
         let frame = NSRect(
             x: (geometry.collapsedFrame.midX - size.width / 2).rounded(),
-            y: notchBottom - size.height - 8,
+            y: notchBottom - 11,
             width: size.width,
             height: size.height
         )
