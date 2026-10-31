@@ -17,10 +17,20 @@ final class SettingsWindowController: NSWindowController {
         window.minSize = NSSize(width: 720, height: 520)
         window.setContentSize(NSSize(width: 780, height: 580))
         window.center()
-        window.setFrameAutosaveName("AtollSettingsWindow")
+
+        if let screen = IslandGeometry.resolve()?.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            let size = window.frame.size
+            window.setFrameOrigin(NSPoint(
+                x: visible.midX - size.width / 2,
+                y: visible.midY - size.height / 2
+            ))
+        }
+
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.level = .normal
+        window.collectionBehavior = [.moveToActiveSpace]
 
         super.init(window: window)
     }
