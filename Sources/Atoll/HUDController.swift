@@ -210,11 +210,11 @@ final class HUDController: ObservableObject {
     private func ensurePanel() -> HUDPanel? {
         guard let geometry = IslandGeometry.resolve() else { return nil }
 
-        let size = NSSize(width: 200, height: 20)
+        let size = NSSize(width: 240, height: 34)
         let notchBottom = geometry.screen.frame.maxY - geometry.notchHeight
         let frame = NSRect(
             x: (geometry.collapsedFrame.midX - size.width / 2).rounded(),
-            y: notchBottom - 11,
+            y: notchBottom - size.height - 8,
             width: size.width,
             height: size.height
         )

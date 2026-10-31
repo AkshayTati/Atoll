@@ -24,8 +24,8 @@ An atoll is a small island. This one lives at the top of your screen.
   EventKit. Choose which calendars or accounts contribute events in Settings.
   No Google/Outlook OAuth.
 - **Audio** — system output switching, volume, and mute controls.
-- **Neon HUD** — a thin volume / brightness / mute line, with a global
-  media-key tap for hardware-key feedback.
+- **Neon HUD** — a compact segmented volume / brightness / mute readout with
+  percentage, icon, and neon glow, driven by a global media-key tap.
 - **Cat** — a CC0 pixel cat walks, sneaks, runs, grooms, stretches, yawns,
   sleeps, plays, chases a butterfly, and peeks around the left/right edges of
   the notch. Hover to say hi; click to open the island or pet her. A global
@@ -92,6 +92,7 @@ macOS window, separate from the notch island, and applies changes live.
 - **Calendar** — choose all calendars or selected calendars, grouped by account;
   all-day event visibility
 - **HUD** — enable/disable, per-control visibility, display duration, Accessibility
+  (volume and brightness use the native 1/16 steps, with 1/64 fine steps on Option)
 - **Cat** — visibility, pace, sleep timing, peek/greet behavior
 - **Shortcuts** — global cat toggle shortcut (default ⌃⌥C), rebindable
 - **About** — version, repo, credits, reset

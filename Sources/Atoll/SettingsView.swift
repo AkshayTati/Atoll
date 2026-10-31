@@ -264,6 +264,9 @@ struct SettingsView: View {
         Form {
             Section("HUD") {
                 Toggle("Show HUD line", isOn: $settings.hudEnabled)
+            }
+
+            Section("Controls") {
                 Toggle("Volume", isOn: $settings.hudShowVolume)
                 Toggle("Brightness", isOn: $settings.hudShowBrightness)
                 Toggle("Mute", isOn: $settings.hudShowMute)

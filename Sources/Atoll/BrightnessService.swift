@@ -55,9 +55,10 @@ final class BrightnessService: ObservableObject {
 
     @discardableResult
     func adjust(by delta: Double) -> Double {
+        refresh()
         let next = min(max(value + delta, 0), 1)
         set(next)
-        return next
+        return value
     }
 
     func set(_ newValue: Double) {

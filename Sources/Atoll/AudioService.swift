@@ -82,30 +82,42 @@ final class AudioService: ObservableObject {
     func setVolume(_ value: Double) {
         guard currentOutputID != 0 else { return }
         isApplyingVolume = true
-        volume = min(max(value, 0), 1)
+        let clamped = min(max(value, 0), 1)
+        let scalar = Float32(clamped)
 
-        let scalar = Float32(volume)
-        let applied = setScalar(currentOutputID, scalar, element: kAudioObjectPropertyElementMain)
-            || setScalar(currentOutputID, scalar, element: 1)
-            || setScalar(currentOutputID, scalar, element: 2)
+        // Set every channel, not just the first one that succeeds. Stereo
+        // devices expose separate elements for left and right; short-circuiting
+        // here changes only one side.
+        var applied = false
+        for element in [kAudioObjectPropertyElementMain, 1, 2] {
+            if setScalar(currentOutputID, scalar, element: element) {
+                applied = true
+            }
+        }
 
-        if !applied {
+        if applied {
+            volume = clamped
+        } else {
             print("audio: volume not settable on this device")
         }
         isApplyingVolume = false
     }
 
     func adjustVolume(by delta: Double) -> Double {
+        refreshVolume()
+
         if isMuted {
             setMuted(false)
         }
+
         let next = min(max(volume + delta, 0), 1)
         setVolume(next)
-        return next
+        return volume
     }
 
     @discardableResult
     func toggleMute() -> Bool {
+        refreshVolume()
         setMuted(!isMuted)
         return isMuted
     }
@@ -118,9 +130,12 @@ final class AudioService: ObservableObject {
         }
 
         let value: UInt32 = muted ? 1 : 0
-        let applied = setMuteScalar(currentOutputID, value, element: kAudioObjectPropertyElementMain)
-            || setMuteScalar(currentOutputID, value, element: 1)
-            || setMuteScalar(currentOutputID, value, element: 2)
+        var applied = false
+        for element in [kAudioObjectPropertyElementMain, 1, 2] {
+            if setMuteScalar(currentOutputID, value, element: element) {
+                applied = true
+            }
+        }
 
         if applied {
             isMuted = muted
