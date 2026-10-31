@@ -293,11 +293,6 @@ struct SettingsView: View {
                     granted: hud.accessibilityTrusted,
                     action: hud.requestAccess
                 )
-                permissionRow(
-                    "Input Monitoring",
-                    granted: hud.inputMonitoringTrusted,
-                    action: hud.requestInputMonitoring
-                )
 
                 HStack(spacing: 8) {
                     Image(systemName: hud.tapInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")

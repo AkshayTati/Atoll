@@ -74,8 +74,8 @@ make signing
 ## Permissions
 
 - **Calendars** — read-only access for the agenda.
-- **Accessibility / Input Monitoring** — global media keys and the
-  volume/brightness HUD. Open **Atoll → Enable HUD Control…** to grant it.
+- **Accessibility** — global media keys and the volume/brightness HUD. Open
+  **Atoll → Settings → HUD → Open Settings** to grant it.
 - **Apple Events** — optional fallback for media players when the system media
   API is unavailable.
 

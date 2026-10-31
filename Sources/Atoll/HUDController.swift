@@ -1,7 +1,6 @@
 import AppKit
 import ApplicationServices
 import Combine
-import IOKit.hidsystem
 import SwiftUI
 import os
 
@@ -16,8 +15,6 @@ final class HUDPanel: NSPanel {
 
 final class HUDController: ObservableObject {
     @Published private(set) var accessibilityTrusted = AXIsProcessTrusted()
-    @Published private(set) var inputMonitoringTrusted =
-        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     @Published private(set) var tapInstalled = false
 
     private let audio: AudioService
@@ -77,16 +74,10 @@ final class HUDController: ObservableObject {
 
     func refreshPermissions() {
         let ax = AXIsProcessTrusted()
-        let inputMonitoring =
-            IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
 
         if ax != accessibilityTrusted {
             accessibilityTrusted = ax
             Logger.app.info("hud: accessibility trusted=\(ax, privacy: .public)")
-        }
-        if inputMonitoring != inputMonitoringTrusted {
-            inputMonitoringTrusted = inputMonitoring
-            Logger.app.info("hud: input monitoring trusted=\(inputMonitoring, privacy: .public)")
         }
 
         guard settings.hudEnabled else {
@@ -94,7 +85,7 @@ final class HUDController: ObservableObject {
             return
         }
 
-        if ax && inputMonitoring {
+        if ax {
             installTapIfPossible()
         } else {
             uninstallTap()
@@ -120,7 +111,6 @@ final class HUDController: ObservableObject {
             kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
         ] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
-        _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
 
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
@@ -133,29 +123,13 @@ final class HUDController: ObservableObject {
         }
     }
 
-    func requestInputMonitoring() {
-        _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
-            NSWorkspace.shared.open(url)
-        }
-
-        for delay in [1.0, 3.0, 6.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.refreshPermissions()
-            }
-        }
-    }
-
     func resetPermissions() {
         let bundleID = Bundle.main.bundleIdentifier ?? "com.akshay.atoll"
-        for service in ["Accessibility", "ListenEvent"] {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-            process.arguments = ["reset", service, bundleID]
-            try? process.run()
-            process.waitUntilExit()
-        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", bundleID]
+        try? process.run()
+        process.waitUntilExit()
         refreshPermissions()
         requestAccess()
     }
@@ -182,7 +156,6 @@ final class HUDController: ObservableObject {
         guard tap == nil,
               settings.hudEnabled,
               accessibilityTrusted,
-              inputMonitoringTrusted,
               Date().timeIntervalSince(lastInstallAttempt) > 5 else { return }
         lastInstallAttempt = Date()
         installTap()
